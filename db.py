@@ -45,12 +45,24 @@ def iniciar():
                 nota TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS ix_eventos_codigo_ts ON eventos(codigo, ts);
+            CREATE TABLE IF NOT EXISTS sesiones (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                codigo TEXT NOT NULL REFERENCES alumnos(codigo),
+                inicio_ts INTEGER NOT NULL,
+                minutos INTEGER NOT NULL,
+                tema TEXT NOT NULL DEFAULT '',
+                fin_ts INTEGER
+            );
             """
         )
         # Columnas añadidas después (bases ya creadas): correo y fecha de envío
-        for col in ("email TEXT NOT NULL DEFAULT ''", "enviado_ts INTEGER"):
+        for tabla, col in (
+            ("alumnos", "email TEXT NOT NULL DEFAULT ''"),
+            ("alumnos", "enviado_ts INTEGER"),
+            ("empresas", "minutos_sesion INTEGER NOT NULL DEFAULT 15"),
+        ):
             try:
-                con.execute("ALTER TABLE alumnos ADD COLUMN " + col)
+                con.execute(f"ALTER TABLE {tabla} ADD COLUMN {col}")
             except sqlite3.OperationalError:
                 pass
 
@@ -281,3 +293,57 @@ def quitar_alumno(codigo):
     with conectar() as con:
         con.execute("DELETE FROM eventos WHERE codigo=?", (codigo,))
         con.execute("DELETE FROM alumnos WHERE codigo=?", (codigo,))
+
+
+# ---------- Conversaciones por voz con duración programada ----------
+
+def _ahora():
+    return int(dt.datetime.now(dt.timezone.utc).timestamp())
+
+
+def minutos_programados(codigo):
+    """Duración de conversación configurada para la empresa del alumno."""
+    with conectar() as con:
+        r = con.execute(
+            "SELECT e.minutos_sesion FROM alumnos a JOIN empresas e ON e.id=a.empresa_id WHERE a.codigo=?",
+            (codigo,),
+        ).fetchone()
+        return int(r["minutos_sesion"]) if r else 15
+
+
+def fijar_minutos_sesion(empresa_id, minutos):
+    with conectar() as con:
+        con.execute(
+            "UPDATE empresas SET minutos_sesion=? WHERE id=?", (_acotar(minutos, 5, 90), empresa_id)
+        )
+
+
+def iniciar_sesion(codigo, minutos, tema=""):
+    """Abre una conversación (cierra las abiertas anteriores). Devuelve los minutos reales."""
+    minutos = _acotar(minutos, 5, 90) if minutos else minutos_programados(codigo)
+    ahora = _ahora()
+    with conectar() as con:
+        con.execute("UPDATE sesiones SET fin_ts=? WHERE codigo=? AND fin_ts IS NULL", (ahora, codigo))
+        con.execute(
+            "INSERT INTO sesiones (codigo, inicio_ts, minutos, tema) VALUES (?,?,?,?)",
+            (codigo, ahora, minutos, str(tema)[:80]),
+        )
+    registrar(codigo, "conversacion_inicio")
+    return minutos
+
+
+def sesion_abierta(codigo):
+    """Última conversación sin cerrar y con menos de 3 horas, o None."""
+    with conectar() as con:
+        r = con.execute(
+            "SELECT * FROM sesiones WHERE codigo=? AND fin_ts IS NULL ORDER BY id DESC LIMIT 1",
+            (codigo,),
+        ).fetchone()
+    if r and _ahora() - r["inicio_ts"] < 3 * 3600:
+        return dict(r)
+    return None
+
+
+def cerrar_sesion(codigo):
+    with conectar() as con:
+        con.execute("UPDATE sesiones SET fin_ts=? WHERE codigo=? AND fin_ts IS NULL", (_ahora(), codigo))

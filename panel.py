@@ -351,6 +351,11 @@ def registrar_rutas(mcp):
             f"<h1>{_e(emp['nombre'])}</h1><p class='sub'>{len(alumnos)} integrante{'' if len(alumnos)==1 else 's'} · prefijo {_e(emp['prefijo'])}</p>{msg}{nota_smtp}"
             f"<div class='acciones'><a class='b gold' href='/gerente?token={_e(emp['token_gerente'])}' target='_blank'>Abrir panel del gerente</a> {todos}</div>"
             + tabla +
+            "<h2>Duración de la conversación por voz</h2>"
+            f"<form method='post' action='/admin/minutos/{eid}' class='f'>"
+            f"<input name='minutos' type='number' min='5' max='90' value='{int(emp.get('minutos_sesion') or 15)}' style='width:90px'> "
+            "<span class='fine'>minutos (15, 30, 60…). El coach no cerrará antes de este tiempo.</span>"
+            "<button class='g'>Guardar</button></form>"
             "<h2>Agregar integrante</h2><form method='post' action='/admin/alumno/" + str(eid) + "' class='f'>"
             "<input name='nombre' placeholder='Nombre completo' required size='28'>"
             "<input name='email' type='email' placeholder='Correo' required size='28'>"
@@ -364,6 +369,19 @@ def registrar_rutas(mcp):
         if not autenticado(request):
             return _login()
         return await _vista_empresa(request, request.path_params["eid"])
+
+    @mcp.custom_route("/admin/minutos/{eid:int}", methods=["POST"])
+    async def fijar_minutos(request: Request):
+        if not autenticado(request):
+            return _login()
+        eid = request.path_params["eid"]
+        d = await request.form()
+        try:
+            m = int(str(d.get("minutos", "15")))
+        except ValueError:
+            m = 15
+        db.fijar_minutos_sesion(eid, m)
+        return await _vista_empresa(request, eid, f"Las conversaciones por voz durarán {max(5, min(90, m))} minutos.")
 
     @mcp.custom_route("/admin/alumno/{eid:int}", methods=["POST"])
     async def nuevo_alumno(request: Request):

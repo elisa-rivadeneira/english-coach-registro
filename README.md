@@ -59,3 +59,10 @@ Variables de entorno en Easypanel:
 - `URL_BASE` (opcional, por ejemplo `https://automation-english-coach-registro.gnrjtm.easypanel.host`)
 - Envío de correo (SMTP): `SMTP_HOST`, `SMTP_PORT` (587 o 465), `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (por ejemplo `English Master Coach <hola@tudominio.com>`). Sin SMTP el panel ofrece «Abrir en mi correo» con el mensaje ya escrito.
 - `PLANTILLA_URL`, `GUIA_URL`, `COACH_NOMBRE` (opcionales, para cambiar los enlaces y el nombre en el correo).
+
+## Conversaciones por voz con duración programada
+
+El coach no percibe el tiempo, así que el servidor lleva el reloj. Herramientas del conector:
+- `iniciar_sesion(minutos, tema)`: abre la conversación y devuelve la agenda (calentamiento, tema, role-play, repaso, cierre). Con `minutos=0` usa la duración que el administrador fijó para la empresa (panel, sección «Duración de la conversación por voz»; 5 a 90 min).
+- `tiempo_restante()`: dice cuánto falta y qué actividad toca; el coach la llama cada 4–5 min y antes de despedirse. Mientras haya tiempo le indica no cerrar y cambiar de actividad.
+- `registrar_practica(tipo="conversacion", ...)` cierra la conversación. Cada consulta de tiempo cuenta como un pulso, así que los minutos del reporte son reales.

@@ -68,7 +68,79 @@ def registrar_practica(
     if not codigo or not db.alumno_existe(codigo):
         return MENSAJE_SIN_CODIGO
     db.registrar(codigo, tipo, aciertos, total, pronunciacion, comprension, nota)
+    if str(tipo).lower().startswith("conv"):
+        db.cerrar_sesion(codigo)
     return "Práctica registrada."
+
+
+def _fases(minutos):
+    """Agenda orientativa de la conversación, repartida según la duración."""
+    p = lambda f: max(1, round(minutos * f))
+    return [
+        (p(0.10), "calentamiento: preguntas sencillas sobre su día o su trabajo, en inglés"),
+        (p(0.35), "conversación sobre el tema del día; corrige con amabilidad los errores de gramática que se repiten"),
+        (p(0.30), "role-play de una situación real de su trabajo (cliente, llamada, reunión)"),
+        (p(0.15), "repaso: repetir bien las frases en las que falló y nuevas variantes"),
+        (p(0.10), "cierre: resumen de lo aprendido, 2 o 3 puntos a reforzar y registrar la práctica"),
+    ]
+
+
+REGLAS_SESION = (
+    "Reglas: NO preguntes «¿quieres algo más?» ni te despidas antes de que se cumpla el tiempo. "
+    "Si la persona dice que ya terminó, o que no se le ocurre más, cambia de actividad en vez de cerrar: "
+    "propón un role-play, un juego de preguntas rápidas o repasar sus errores. Solo cierra antes si lo pide "
+    "dos veces o dice que tiene que irse. Llama a tiempo_restante cada 4 o 5 minutos."
+)
+
+
+@mcp.tool()
+def iniciar_sesion(ctx: Context, minutos: int = 0, tema: str = "") -> str:
+    """Llámala AL EMPEZAR una conversación por voz. Abre un reloj en el servidor y devuelve la
+    duración programada y la agenda. minutos: duración pedida por la persona (por ejemplo 15, 30
+    o 60); si es 0 se usa la duración que programó su empresa. tema: tema de la conversación."""
+    codigo = _codigo(ctx)
+    if not codigo or not db.alumno_existe(codigo):
+        return MENSAJE_SIN_CODIGO
+    m = db.iniciar_sesion(codigo, minutos, tema)
+    agenda = "\n".join(f"- {d} min: {t}" for d, t in _fases(m))
+    return (
+        f"Conversación programada de {m} minutos. El reloj ya corre en el servidor.\n"
+        f"Agenda sugerida:\n{agenda}\n{REGLAS_SESION}"
+    )
+
+
+@mcp.tool()
+def tiempo_restante(ctx: Context) -> str:
+    """Dice cuántos minutos faltan de la conversación y qué hacer ahora. Llámala cada 4 o 5
+    minutos y SIEMPRE antes de despedirte: si faltan minutos, no cierres la conversación."""
+    codigo = _codigo(ctx)
+    if not codigo or not db.alumno_existe(codigo):
+        return MENSAJE_SIN_CODIGO
+    s = db.sesion_abierta(codigo)
+    if not s:
+        return "No hay una conversación abierta. Llama primero a iniciar_sesion."
+    db.registrar(codigo, "pulso")  # sirve para medir los minutos reales de práctica
+    transcurrido = (db._ahora() - s["inicio_ts"]) / 60
+    resto = s["minutos"] - transcurrido
+    if resto <= 0.5:
+        return (
+            f"Se cumplieron los {s['minutos']} minutos. Haz el cierre: resume lo aprendido, nombra 2 o 3 "
+            "puntos de gramática a reforzar, llama a registrar_practica (tipo «conversacion») con valores "
+            "reales y despídete con ánimo."
+        )
+    fase, acum = "", 0
+    for d, t in _fases(s["minutos"]):
+        acum += d
+        if transcurrido < acum:
+            fase = t
+            break
+    fase = fase or "cierre: resumen y registro"
+    if resto <= 3:
+        return f"Quedan unos {round(resto)} min. Empieza el cierre: {fase}. Después llama a registrar_practica."
+    return (
+        f"Han pasado {round(transcurrido)} min; quedan {round(resto)} de {s['minutos']}. "
+        f"Ahora toca: {fase}. {REGLAS_SESION}"
+    )
 
 
 @mcp.tool()
