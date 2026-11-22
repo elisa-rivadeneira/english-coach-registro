@@ -571,7 +571,7 @@ def pagina_gerente(datos):
         for a in al if a["inicio"]
     )
     calendario = (
-        "<h2>Asistencia día por día</h2><div class='panel'><table class='cal'><tr><th>Alumno</th>" + cab + "</tr>" + fcal + "</table></div>"
+        "<h2 id='asistencia'>Asistencia día por día</h2><div class='panel'><table class='cal'><tr><th>Alumno</th>" + cab + "</tr>" + fcal + "</table></div>"
         "<p class='fine'><span class='q n2'></span> habló con el coach (asistió) &nbsp; <span class='q n1'></span> solo hizo ejercicios &nbsp; "
         "<span class='q n0'></span> no practicó &nbsp; <span class='q nx'></span> aún no empezaba</p>"
         if fcal else ""
@@ -599,7 +599,7 @@ def pagina_gerente(datos):
             f"<div class='fine'>Acierto en ejercicios por semana (primer intento)</div><div class='sems'>{barras}</div>"
             f"<div class='fine' style='margin-top:8px'>Lo que está mejorando</div><ul>{mej}</ul></div>"
         )
-    aprendiendo = ("<h2>Cómo van aprendiendo</h2><div class='alus'>" + "".join(tarjetas) + "</div>") if tarjetas else ""
+    aprendiendo = ("<h2 id='aprendizaje'>Cómo van aprendiendo</h2><div class='alus'>" + "".join(tarjetas) + "</div>") if tarjetas else ""
     notas = (
         "<p class='fine'><b>Cómo leerlo.</b> La <b>asistencia</b> cuenta los días en que la persona habló con el coach "
         "(últimos 30 días o desde que empezó); los <b>ejercicios</b> son complemento. El <b>acierto</b> mide solo el primer intento. "
@@ -619,8 +619,22 @@ def pagina_gerente(datos):
         "tr.alerta td{background:#fff9f1}.up{color:#1f7a4d;font-weight:700}.down{color:#b3261e;font-weight:700}"
         ".stat small{font-size:15px;color:var(--mut);font-weight:500}.top{max-width:1240px;margin:0 auto;padding:34px 28px 60px}"
         ".head{display:flex;align-items:center;gap:12px;margin-bottom:6px}.dot{width:10px;height:36px;border-radius:5px;background:var(--gold)}"
-        "</style></head><body><div class='top'>"
-        f"<div class='head'><div class='dot'></div><div><h1>{_e(datos['empresa'])}</h1>"
-        "<p class='sub' style='margin:0'>Avance de práctica de inglés de tu equipo · English Master Coach</p></div></div>"
-        f"<div class='cards'>{cards}</div>{aviso}{tabla}{calendario}{aprendiendo}{notas}</div></body></html>"
+        "html{scroll-behavior:smooth}h2[id],section[id]{scroll-margin-top:18px}.main.g{max-width:1320px}"
+        ".emp{margin:14px 12px 4px;padding:12px 14px;border-radius:12px;background:rgba(255,255,255,.06)}.emp b{display:block;color:#fff;font-size:15px}"
+        ".emp span{font-size:12px;color:#9aa6c2}"
+        "</style></head><body><div class='shell'>"
+        "<aside class='side'><div class='brand'><b>English Master Coach</b><span>Panel del gerente</span></div>"
+        f"<div class='emp'><b>{_e(datos['empresa'])}</b><span>{n} integrante{'' if n == 1 else 's'} · piloto de práctica de inglés</span></div>"
+        "<nav class='nav'><h6>Secciones</h6>"
+        "<a href='#resumen'><span>Resumen</span></a>"
+        "<a href='#alumnos'><span>Alumnos</span></a>"
+        "<a href='#asistencia'><span>Asistencia día por día</span></a>"
+        "<a href='#aprendizaje'><span>Cómo van aprendiendo</span></a>"
+        "<a href='#leer'><span>Cómo leerlo</span></a></nav>"
+        f"<div class='pie'>Actualizado {_hoy().strftime('%d/%m/%Y')}</div></aside>"
+        "<main class='main g'>"
+        f"<section id='resumen'><h1>Resumen del equipo</h1><p class='sub'>Avance de práctica de inglés de {_e(datos['empresa'])}.</p>"
+        f"<div class='cards'>{cards}</div>{aviso}</section>"
+        f"<h2 id='alumnos'>Alumnos</h2>{tabla}{calendario}{aprendiendo}"
+        f"<div id='leer'>{notas}</div></main></div></body></html>"
     )
