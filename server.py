@@ -127,10 +127,11 @@ async def gerente(request: Request) -> HTMLResponse:
     for a in datos["alumnos"]:
         alerta = a["sin_practicar"] is None or a["sin_practicar"] >= 2
         filas.append(
-            "<tr class='{}'><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td>"
+            "<tr class='{}'><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td>"
             "<td>{}</td><td>{}</td></tr>".format(
                 "alerta" if alerta else "",
-                html.escape(a["codigo"]),
+                html.escape(a["nombre"] or a["codigo"]) + "<br><small>" + html.escape(a["codigo"]) + "</small>",
+                "".join("<span class='d{}'></span>".format(" on" if d else "") for d in a["dias7"]),
                 _celda(a["dias_30"]),
                 _celda(a["racha"]),
                 _celda(a["min_7d"]),
@@ -148,17 +149,23 @@ table{{border-collapse:collapse;width:100%;max-width:900px}}
 th,td{{padding:8px 10px;border-bottom:1px solid #e3ded4;text-align:left}}
 th{{font-size:13px;color:#6b665e}}
 tr.alerta td{{background:#fbe9e5}}
+.d{{display:inline-block;width:13px;height:13px;border-radius:3px;background:#ddd6c8;margin-right:2px}}.d.on{{background:#2f7d32}}
+small{{color:#8a8479}}
 .nota{{color:#6b665e;font-size:14px;max-width:700px}}
 </style></head><body>
 <h1>{html.escape(datos['empresa'])}: práctica de inglés</h1>
 <p class="nota">La constancia (días y minutos) es lo principal. Las notas de pronunciación y
 comprensión van de 1 a 5 y son orientativas: las estima la IA durante la práctica y no son una
 calificación oficial de nivel. En rojo, quienes llevan 2 días o más sin practicar.</p>
-<table><tr><th>Código</th><th>Días (30 d)</th><th>Racha</th><th>Min. (7 d)</th>
+<table><tr><th>Alumno</th><th>Últimos 7 días</th><th>Días (30 d)</th><th>Racha</th><th>Min. (7 d)</th>
 <th>Última práctica</th><th>Pronunc.</th><th>Compr.</th></tr>
 {''.join(filas)}</table></body></html>"""
     return HTMLResponse(pagina)
 
+
+import panel  # noqa: E402
+
+panel.registrar_rutas(mcp)
 
 # Cargar el modelo de voz al arrancar, para que la primera frase no espere la carga
 threading.Thread(target=lambda: voz._motor(), daemon=True).start()

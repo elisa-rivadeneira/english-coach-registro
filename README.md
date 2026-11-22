@@ -45,3 +45,17 @@ Probado en local; sin probar desde un artefacto ni desde la app móvil.
 5. Dominio: agrega tu dominio al servicio con HTTPS activado (Easypanel emite el certificado).
 6. Crear empresa: consola del servicio, `URL_BASE=https://TU-DOMINIO python admin.py empresa "Hotel Gloria" GLO 8`.
 7. Probar: https://TU-DOMINIO/salud debe decir ok. El conector queda en https://TU-DOMINIO/mcp
+
+## Panel de administración (`/admin`)
+
+Entras con la clave `ADMIN_PASSWORD`. Flujo en una reunión:
+1. **Nueva empresa** (nombre y prefijo de 3 letras, por ejemplo GLO).
+2. Dentro de la empresa, **Agregar integrante** (nombre completo + correo): el código aparece al instante.
+3. **Enviar correo** (o «Enviar a los N pendientes»): sale el mensaje con el código, la URL del conector y el enlace a la plantilla en GitHub. «ver mensaje» muestra el texto antes de enviar.
+4. En la misma tabla ves los últimos 7 días, la racha y la última práctica de cada integrante, y el botón «Abrir panel del gerente».
+
+Variables de entorno en Easypanel:
+- `ADMIN_PASSWORD` (obligatoria para activar el panel)
+- `URL_BASE` (opcional, por ejemplo `https://automation-english-coach-registro.gnrjtm.easypanel.host`)
+- Envío de correo (SMTP): `SMTP_HOST`, `SMTP_PORT` (587 o 465), `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (por ejemplo `English Master Coach <hola@tudominio.com>`). Sin SMTP el panel ofrece «Abrir en mi correo» con el mensaje ya escrito.
+- `PLANTILLA_URL`, `GUIA_URL`, `COACH_NOMBRE` (opcionales, para cambiar los enlaces y el nombre en el correo).

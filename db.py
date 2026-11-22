@@ -47,6 +47,12 @@ def iniciar():
             CREATE INDEX IF NOT EXISTS ix_eventos_codigo_ts ON eventos(codigo, ts);
             """
         )
+        # Columnas añadidas después (bases ya creadas): correo y fecha de envío
+        for col in ("email TEXT NOT NULL DEFAULT ''", "enviado_ts INTEGER"):
+            try:
+                con.execute("ALTER TABLE alumnos ADD COLUMN " + col)
+            except sqlite3.OperationalError:
+                pass
 
 
 def _codigo_nuevo(prefijo):
@@ -155,8 +161,12 @@ def resumen_alumno(con, codigo, hoy=None):
     pron = [f["pronunciacion"] for f in filas if f["pronunciacion"]]
     comp = [f["comprension"] for f in filas if f["comprension"]]
     ultima = max(dias) if dias else None
+    fila = con.execute("SELECT nombre FROM alumnos WHERE codigo=?", (codigo,)).fetchone()
+    practicados = set(dias)
     return {
         "codigo": codigo,
+        "nombre": (fila["nombre"] if fila else "") or "",
+        "dias7": [(hoy - dt.timedelta(days=k)) in practicados for k in range(6, -1, -1)],
         "dias_30": len(set(dias)),
         "racha": racha(dias, hoy),
         "min_7d": minutos(t_semana),
@@ -184,3 +194,90 @@ def resumen_empresa(token):
             "empresa": emp["nombre"],
             "alumnos": [resumen_alumno(con, c) for c in codigos],
         }
+
+
+# ---------- Administración (panel web) ----------
+
+def crear_empresa_vacia(nombre, prefijo):
+    """Crea una empresa sin alumnos. Devuelve su id."""
+    prefijo = prefijo.strip().upper()
+    with conectar() as con:
+        cur = con.execute(
+            "INSERT INTO empresas (nombre, prefijo, token_gerente) VALUES (?,?,?)",
+            (nombre.strip(), prefijo, secrets.token_urlsafe(18)),
+        )
+        return cur.lastrowid
+
+
+def listar_empresas():
+    with conectar() as con:
+        return [
+            dict(r)
+            for r in con.execute(
+                "SELECT e.id, e.nombre, e.prefijo, e.token_gerente,"
+                " (SELECT COUNT(*) FROM alumnos a WHERE a.empresa_id=e.id) AS n"
+                " FROM empresas e ORDER BY e.id DESC"
+            )
+        ]
+
+
+def empresa_por_id(empresa_id):
+    with conectar() as con:
+        r = con.execute("SELECT * FROM empresas WHERE id=?", (empresa_id,)).fetchone()
+        return dict(r) if r else None
+
+
+def agregar_alumno(empresa_id, nombre, email):
+    """Crea un alumno con código nuevo. Devuelve el código."""
+    emp = empresa_por_id(empresa_id)
+    if not emp:
+        raise ValueError("La empresa no existe")
+    with conectar() as con:
+        while True:
+            c = _codigo_nuevo(emp["prefijo"])
+            try:
+                con.execute(
+                    "INSERT INTO alumnos (codigo, empresa_id, nombre, email) VALUES (?,?,?,?)",
+                    (c, empresa_id, nombre.strip()[:80], email.strip()[:120]),
+                )
+                return c
+            except sqlite3.IntegrityError:
+                continue
+
+
+def alumnos_de_empresa(empresa_id):
+    """Alumnos con su resumen de práctica, correo y fecha de envío."""
+    with conectar() as con:
+        filas = con.execute(
+            "SELECT codigo, nombre, email, enviado_ts FROM alumnos WHERE empresa_id=? ORDER BY nombre, codigo",
+            (empresa_id,),
+        ).fetchall()
+        salida = []
+        for f in filas:
+            r = resumen_alumno(con, f["codigo"])
+            r["email"] = f["email"]
+            r["enviado_ts"] = f["enviado_ts"]
+            salida.append(r)
+        return salida
+
+
+def alumno(codigo):
+    with conectar() as con:
+        r = con.execute(
+            "SELECT a.codigo, a.nombre, a.email, e.nombre AS empresa FROM alumnos a"
+            " JOIN empresas e ON e.id=a.empresa_id WHERE a.codigo=?",
+            (codigo,),
+        ).fetchone()
+        return dict(r) if r else None
+
+
+def marcar_enviado(codigo):
+    ahora = int(dt.datetime.now(dt.timezone.utc).timestamp())
+    with conectar() as con:
+        con.execute("UPDATE alumnos SET enviado_ts=? WHERE codigo=?", (ahora, codigo))
+
+
+def quitar_alumno(codigo):
+    with conectar() as con:
+        con.execute("DELETE FROM eventos WHERE codigo=?", (codigo,))
+        con.execute("DELETE FROM alumnos WHERE codigo=?", (codigo,))
