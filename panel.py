@@ -278,6 +278,11 @@ def registrar_rutas(mcp):
             f"<div class='stat'><b>{total}</b><span>Integrantes</span></div>"
             f"<div class='stat'><b>{activos}</b><span>Practicaron esta semana</span></div></div>"
             + tabla +
+            "<h2>Ajustes generales</h2>"
+            "<form method='post' action='/admin/tope' class='f'>"
+            f"<input name='minutos' type='number' min='5' max='240' value='{db.max_min_dia()}' style='width:90px'> "
+            "<span class='fine'>minutos máximos de conversación por voz por alumno al día (hoy: 60).</span>"
+            "<button class='g'>Guardar</button></form>"
             "<h2 id='nueva'>Nueva empresa</h2><form method='post' action='/admin/empresa' class='f'>"
             "<input name='nombre' placeholder='Nombre (Hotel Gloria)' required>"
             "<input name='prefijo' placeholder='Prefijo (GLO)' maxlength='4' size='6' required>"
@@ -323,14 +328,17 @@ def registrar_rutas(mcp):
             filas.append(
                 f"<tr><td><b>{_e(a['nombre'] or '(sin nombre)')}</b><div class='fine'>{_e(a['email'])}</div>"
                 f"<details><summary class='fine'>ver mensaje</summary><pre>{_e(texto)}</pre></details></td>"
-                f"<td><span class='cod'>{_e(a['codigo'])}</span></td><td>{_e(str(a['compromiso']) + ' min/día') if a['compromiso'] else '<span class=fine>–</span>'}</td><td>{_dias_html(a['dias7'])}</td>"
+                f"<td><span class='cod'>{_e(a['codigo'])}</span></td><td><form method='post' action='/admin/compromiso/{_e(a['codigo'])}' class='f' style='margin:0;flex-wrap:nowrap'>"
+                f"<input name='minutos' type='number' min='5' max='{db.max_min_dia()}' value='{a['compromiso'] or ''}' placeholder='–' style='width:64px;padding:6px'><span class='fine'>min</span>"
+                "<button class='g' style='padding:6px 10px'>OK</button></form></td>"
+                f"<td>{_dias_html(a['dias7'])}</td>"
                 f"<td>{a['racha']}</td><td>{ult}</td>"
                 f"<td>{boton}<div class='fine'>{_enviado(a['enviado_ts'])}</div></td>"
                 f"<td><form method='post' action='/admin/quitar/{_e(a['codigo'])}' onsubmit=\"return confirm('¿Quitar a este integrante y su historial?')\">"
                 "<button class='g'>Quitar</button></form></td></tr>"
             )
         tabla = (
-            "<div class='panel'><table><tr><th>Integrante</th><th>Código</th><th>Compromiso</th><th>Últimos 7 días</th><th>Racha</th><th>Última</th><th>Correo</th><th></th></tr>"
+            "<div class='panel'><table><tr><th>Integrante</th><th>Código</th><th>Compromiso diario</th><th>Habló (7 días)</th><th>Racha</th><th>Última</th><th>Correo</th><th></th></tr>"
             + "".join(filas) + "</table></div>"
             if filas else "<p class='fine'>Aún no hay integrantes. Agrega el primero abajo.</p>"
         )
@@ -352,7 +360,7 @@ def registrar_rutas(mcp):
             f"<div class='acciones'><a class='b gold' href='/gerente?token={_e(emp['token_gerente'])}' target='_blank'>Abrir panel del gerente</a> {todos}</div>"
             + tabla +
             "<h2>Duración de la conversación por voz</h2>"
-            f"<p class='fine'>Cada alumno dice en su entrevista cuántos minutos al día se compromete (tope {db.MAX_MIN_DIA}). Este valor se usa solo si no lo dijo.</p>"
+            f"<p class='fine'>Cada alumno dice en su entrevista cuántos minutos al día se compromete (tope {db.max_min_dia()}). Este valor se usa solo si no lo dijo.</p>"
             f"<form method='post' action='/admin/minutos/{eid}' class='f'>"
             f"<input name='minutos' type='number' min='5' max='60' value='{int(emp.get('minutos_sesion') or 15)}' style='width:90px'> "
             "<span class='fine'>minutos por defecto (tope 60).</span>"
@@ -371,6 +379,30 @@ def registrar_rutas(mcp):
             return _login()
         return await _vista_empresa(request, request.path_params["eid"])
 
+    @mcp.custom_route("/admin/tope", methods=["POST"])
+    async def fijar_tope(request: Request):
+        if not autenticado(request):
+            return _login()
+        d = await request.form()
+        try:
+            m = db.fijar_max_min_dia(int(str(d.get("minutos", "60"))))
+        except ValueError:
+            m = db.max_min_dia()
+        return RedirectResponse("/admin?tope=" + str(m), status_code=303)
+
+    @mcp.custom_route("/admin/compromiso/{codigo}", methods=["POST"])
+    async def fijar_comp(request: Request):
+        if not autenticado(request):
+            return _login()
+        codigo = request.path_params["codigo"].upper()
+        d = await request.form()
+        eid = _eid(codigo)
+        try:
+            m = db.fijar_compromiso(codigo, int(str(d.get("minutos", "0"))))
+        except ValueError:
+            return await _vista_empresa(request, eid, "Escribe un número de minutos.", ok=False)
+        return await _vista_empresa(request, eid, f"Compromiso de {codigo}: {m} min al día.")
+
     @mcp.custom_route("/admin/minutos/{eid:int}", methods=["POST"])
     async def fijar_minutos(request: Request):
         if not autenticado(request):
@@ -382,7 +414,7 @@ def registrar_rutas(mcp):
         except ValueError:
             m = 15
         db.fijar_minutos_sesion(eid, m)
-        return await _vista_empresa(request, eid, f"Las conversaciones por voz durarán {max(5, min(db.MAX_MIN_DIA, m))} minutos.")
+        return await _vista_empresa(request, eid, f"Las conversaciones por voz durarán {max(5, min(db.max_min_dia(), m))} minutos.")
 
     @mcp.custom_route("/admin/alumno/{eid:int}", methods=["POST"])
     async def nuevo_alumno(request: Request):
@@ -454,3 +486,96 @@ def _eid(codigo):
     with db.conectar() as con:
         r = con.execute("SELECT empresa_id FROM alumnos WHERE codigo=?", (codigo,)).fetchone()
         return r["empresa_id"] if r else 0
+
+
+def _chip(txt, tono=""):
+    return f"<span class='chip {tono}'>{_e(txt)}</span>"
+
+
+def _prom(vals):
+    v = [x for x in vals if x is not None]
+    return round(sum(v) / len(v)) if v else None
+
+
+def pagina_gerente(datos):
+    al = datos["alumnos"]
+    n = len(al)
+    hablaron = sum(1 for a in al if any(a["dias7"]))
+    asis = _prom([a["asistencia"] for a in al if a["inicio"]])
+    cumpl = _prom([a["cumplimiento"] for a in al])
+    acierto = _prom([a["acierto"] for a in al])
+    minutos7 = sum(a["min_habla_7d"] for a in al)
+    atencion = [a for a in al if a["inicio"] is None or (a["sin_hablar"] is None or a["sin_hablar"] >= 2)]
+
+    def stat(valor, etiqueta):
+        return f"<div class='stat'><b>{valor}</b><span>{etiqueta}</span></div>"
+
+    cards = (
+        stat(f"{hablaron}<small> de {n}</small>", "hablaron con el coach esta semana")
+        + stat("–" if asis is None else f"{asis}%", "asistencia (días que hablaron)")
+        + stat(f"{minutos7}<small> min</small>", "hablados esta semana")
+        + stat("–" if cumpl is None else f"{cumpl}%", "cumplimiento de su compromiso")
+        + stat("–" if acierto is None else f"{acierto}%", "acierto en ejercicios (complemento)")
+    )
+    if atencion:
+        nombres = ", ".join(_e(a["nombre"] or a["codigo"]) for a in atencion)
+        aviso = f"<div class='aviso'><b>Para animar hoy:</b> {nombres} (2 días o más sin hablar con el coach).</div>"
+    else:
+        aviso = "<div class='ok'>Todo el equipo habló con el coach en los últimos 2 días. 👏</div>" if n else ""
+
+    filas = []
+    for a in sorted(al, key=lambda x: (x["asistencia"] is None, -(x["asistencia"] or 0))):
+        if a["inicio"] is None:
+            filas.append(
+                f"<tr class='alerta'><td><b>{_e(a['nombre'] or a['codigo'])}</b><div class='fine'>{_e(a['codigo'])}</div></td>"
+                "<td colspan='7' class='fine'>Todavía no empieza.</td></tr>"
+            )
+            continue
+        alerta = a["sin_hablar"] is None or a["sin_hablar"] >= 2
+        comp = f" de {a['compromiso']}" if a["compromiso"] else ""
+        cu = "" if a["cumplimiento"] is None else f"<div class='fine'>{a['cumplimiento']}% de lo prometido</div>"
+        tend = ""
+        if a["acierto_tend"] is not None and a["acierto_tend"] != 0:
+            tend = f" <span class='{'up' if a['acierto_tend'] > 0 else 'down'}'>{'▲' if a['acierto_tend'] > 0 else '▼'}{abs(a['acierto_tend'])}</span>"
+        niv = (
+            "<span class='fine'>sin evaluar</span>"
+            if not a["nivel_act"]
+            else (_e(a["nivel_ini"]) + (f" → <b>{_e(a['nivel_act'])}</b>" if a["nivel_act"] != a["nivel_ini"] else ""))
+        )
+        deb = "".join(_chip(f"{t} {p}%", "r") for t, p, _ in a["temas_debiles"]) or "<span class='fine'>–</span>"
+        fue = "".join(_chip(f"{t} {p}%", "v") for t, p, _ in a["temas_fuertes"]) or "<span class='fine'>–</span>"
+        filas.append(
+            f"<tr class='{'alerta' if alerta else ''}'>"
+            f"<td><b>{_e(a['nombre'] or a['codigo'])}</b><div class='fine'>{_e(a['codigo'])} · racha {a['racha']}</div></td>"
+            f"<td>{a['transcurridos']}</td>"
+            f"<td><b>{a['dias_habla']}</b> días · {a['asistencia']}%<div>{_dias_html(a['dias7'])}</div></td>"
+            f"<td><b>{a['min_habla_7d']}</b>{comp} min{cu}</td>"
+            f"<td>{a['dias_ej']} días · {'–' if a['acierto'] is None else str(a['acierto']) + '%'}{tend}</td>"
+            f"<td>{niv}</td><td>{deb}</td><td>{fue}</td></tr>"
+        )
+    tabla = (
+        "<div class='panel'><table><tr><th>Alumno</th><th>Días desde que empezó</th><th>Asistencia · habló con el coach</th>"
+        "<th>Min. hablados (7 d)</th><th>Ejercicios · acierto</th><th>Nivel</th><th>A reforzar</th><th>Fortalezas</th></tr>"
+        + "".join(filas) + "</table></div>"
+        if filas else "<p class='fine'>Todavía no hay integrantes.</p>"
+    )
+    notas = (
+        "<p class='fine'><b>Cómo leerlo.</b> La <b>asistencia</b> cuenta los días en que la persona habló con el coach "
+        "(últimos 30 días o desde que empezó); los <b>ejercicios</b> son complemento. El <b>acierto</b> mide solo el primer intento. "
+        "«A reforzar» y «Fortalezas» salen de los ejercicios por tema (mínimo 4 respuestas). El <b>nivel</b> es una estimación del coach "
+        "(A1 a B2), orientativa y no una certificación. Las notas de pronunciación y comprensión también son orientativas.</p>"
+    )
+    return HTMLResponse(
+        "<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        f"<title>Práctica de inglés · {_e(datos['empresa'])}</title><style>{ESTILO}"
+        ".chip{display:inline-block;border-radius:20px;padding:2px 9px;font-size:12px;margin:1px 3px 1px 0;background:#eceef4}"
+        ".chip.r{background:#fdecea;color:#8a2a21}.chip.v{background:#e6f4ec;color:#14563a}"
+        "tr.alerta td{background:#fff9f1}.up{color:#1f7a4d;font-weight:700}.down{color:#b3261e;font-weight:700}"
+        ".stat small{font-size:15px;color:var(--mut);font-weight:500}.top{max-width:1240px;margin:0 auto;padding:34px 28px 60px}"
+        ".head{display:flex;align-items:center;gap:12px;margin-bottom:6px}.dot{width:10px;height:36px;border-radius:5px;background:var(--gold)}"
+        "</style></head><body><div class='top'>"
+        f"<div class='head'><div class='dot'></div><div><h1>{_e(datos['empresa'])}</h1>"
+        "<p class='sub' style='margin:0'>Avance de práctica de inglés de tu equipo · English Master Coach</p></div></div>"
+        f"<div class='cards'>{cards}</div>{aviso}{tabla}{notas}</div></body></html>"
+    )

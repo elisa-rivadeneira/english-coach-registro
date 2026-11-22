@@ -66,3 +66,13 @@ El coach no percibe el tiempo, así que el servidor lleva el reloj. Herramientas
 - `iniciar_sesion(minutos, tema)`: abre la conversación y devuelve la agenda (calentamiento, tema, role-play, repaso, cierre). Con `minutos=0` usa el compromiso diario que el alumno dijo en su entrevista (`fijar_compromiso`); si no lo dijo, el valor por defecto de la empresa (panel). Tope diario: 60 minutos en total (variable `MAX_MINUTOS_DIA`); si ya los usó, el servidor le ordena al coach no abrir otra conversación.
 - `tiempo_restante()`: dice cuánto falta y qué actividad toca; el coach la llama cada 4–5 min y antes de despedirse. Mientras haya tiempo le indica no cerrar y cambiar de actividad.
 - `registrar_practica(tipo="conversacion", ...)` cierra la conversación. Cada consulta de tiempo cuenta como un pulso, así que los minutos del reporte son reales.
+
+## Métricas del gerente (`/gerente?token=...`)
+
+- **Asistencia** = días en que el alumno habló con el coach (conversación por voz). Los **ejercicios** son complementarios y se muestran aparte (días y acierto al primer intento, con tendencia contra la semana anterior).
+- Días desde que empezó, racha, minutos hablados (7 días) frente al **compromiso diario** y % de cumplimiento.
+- **Nivel**: estimación del coach (herramienta `registrar_evaluacion`: A0–B2) al inicio y cada semana. Es orientativa, no una certificación.
+- **A reforzar / Fortalezas**: temas de gramática y vocabulario con acierto bajo (<60%) o alto (≥80%), mínimo 4 respuestas (la app envía el tema de cada ejercicio).
+- «Para animar hoy»: quienes llevan 2 días o más sin hablar con el coach.
+
+Desde `/admin` se editan el tope diario de minutos (Inicio) y el compromiso diario de cada alumno (tabla de la empresa).

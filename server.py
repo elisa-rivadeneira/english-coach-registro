@@ -101,7 +101,7 @@ def fijar_compromiso(ctx: Context, minutos: int) -> str:
     if not codigo or not db.alumno_existe(codigo):
         return MENSAJE_SIN_CODIGO
     m = db.fijar_compromiso(codigo, minutos)
-    aviso = f" (pidió {minutos}; el máximo es {db.MAX_MIN_DIA})" if minutos > db.MAX_MIN_DIA else ""
+    aviso = f" (pidió {minutos}; el máximo es {db.max_min_dia()})" if minutos > db.max_min_dia() else ""
     return f"Compromiso guardado: {m} minutos al día{aviso}."
 
 
@@ -117,12 +117,12 @@ def iniciar_sesion(ctx: Context, minutos: int = 0, tema: str = "") -> str:
     m, topado = db.iniciar_sesion(codigo, minutos, tema)
     if m == 0:
         return (
-            f"La persona ya cumplió su tope de {db.MAX_MIN_DIA} minutos de conversación por hoy. "
+            f"La persona ya cumplió su tope de {db.max_min_dia()} minutos de conversación por hoy. "
             "No inicies otra conversación: felicítala por su constancia, dile que mañana sigue y, si quiere, "
             "ofrécele repasar con los ejercicios de su entrenador."
         )
     nota = (
-        f" (el máximo diario es {db.MAX_MIN_DIA} min en total; ya usó {db.minutos_usados_hoy(codigo)} hoy)"
+        f" (el máximo diario es {db.max_min_dia()} min en total; ya usó {db.minutos_usados_hoy(codigo)} hoy)"
         if topado else ""
     )
     agenda = "\n".join(f"- {d} min: {t}" for d, t in _fases(m))
@@ -164,6 +164,18 @@ def tiempo_restante(ctx: Context) -> str:
         f"Han pasado {round(transcurrido)} min; quedan {round(resto)} de {s['minutos']}. "
         f"Ahora toca: {fase}. {REGLAS_SESION}"
     )
+
+
+@mcp.tool()
+def registrar_evaluacion(ctx: Context, nivel: str, fortalezas: str = "", reforzar: str = "") -> str:
+    """Registra tu estimación del nivel de inglés de la persona (A1, A2, B1 o B2). Llámala al terminar
+    la entrevista inicial y luego una vez por semana, con honestidad: es una estimación orientativa,
+    no una certificación. fortalezas y reforzar: frases cortas (por ejemplo «pasado simple»)."""
+    codigo = _codigo(ctx)
+    if not codigo or not db.alumno_existe(codigo):
+        return MENSAJE_SIN_CODIGO
+    db.registrar_evaluacion(codigo, nivel, fortalezas, reforzar)
+    return "Evaluación registrada."
 
 
 @mcp.tool()
@@ -218,44 +230,9 @@ async def gerente(request: Request) -> HTMLResponse:
     datos = db.resumen_empresa(token) if token else None
     if not datos:
         return HTMLResponse("<p>Enlace no válido.</p>", status_code=404)
-    filas = []
-    for a in datos["alumnos"]:
-        alerta = a["sin_practicar"] is None or a["sin_practicar"] >= 2
-        filas.append(
-            "<tr class='{}'><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td>"
-            "<td>{}</td><td>{}</td></tr>".format(
-                "alerta" if alerta else "",
-                html.escape(a["nombre"] or a["codigo"]) + "<br><small>" + html.escape(a["codigo"]) + "</small>",
-                "".join("<span class='d{}'></span>".format(" on" if d else "") for d in a["dias7"]),
-                _celda(a["dias_30"]),
-                _celda(a["racha"]),
-                _celda(a["min_7d"]),
-                "sin práctica" if a["ultima"] is None else _celda(a["ultima"]),
-                _celda(a["pron"]),
-                _celda(a["comp"]),
-            )
-        )
-    pagina = f"""<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Práctica de inglés · {html.escape(datos['empresa'])}</title>
-<style>
-body{{font:16px system-ui,sans-serif;margin:24px;color:#1f1d1a;background:#faf8f4}}
-table{{border-collapse:collapse;width:100%;max-width:900px}}
-th,td{{padding:8px 10px;border-bottom:1px solid #e3ded4;text-align:left}}
-th{{font-size:13px;color:#6b665e}}
-tr.alerta td{{background:#fbe9e5}}
-.d{{display:inline-block;width:13px;height:13px;border-radius:3px;background:#ddd6c8;margin-right:2px}}.d.on{{background:#2f7d32}}
-small{{color:#8a8479}}
-.nota{{color:#6b665e;font-size:14px;max-width:700px}}
-</style></head><body>
-<h1>{html.escape(datos['empresa'])}: práctica de inglés</h1>
-<p class="nota">La constancia (días y minutos) es lo principal. Las notas de pronunciación y
-comprensión van de 1 a 5 y son orientativas: las estima la IA durante la práctica y no son una
-calificación oficial de nivel. En rojo, quienes llevan 2 días o más sin practicar.</p>
-<table><tr><th>Alumno</th><th>Últimos 7 días</th><th>Días (30 d)</th><th>Racha</th><th>Min. (7 d)</th>
-<th>Última práctica</th><th>Pronunc.</th><th>Compr.</th></tr>
-{''.join(filas)}</table></body></html>"""
-    return HTMLResponse(pagina)
+    import panel as _panel
+
+    return _panel.pagina_gerente(datos)
 
 
 import panel  # noqa: E402

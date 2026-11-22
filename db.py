@@ -7,7 +7,7 @@ import sqlite3
 DB_PATH = os.environ.get("REGISTRO_DB", "registro.db")
 LIMA = dt.timezone(dt.timedelta(hours=-5))
 ALFABETO = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # sin 0/O/1/I para evitar confusiones
-MAX_MIN_DIA = int(os.environ.get("MAX_MINUTOS_DIA", "60"))  # tope diario de conversación por voz
+MAX_MIN_DIA_DEFECTO = int(os.environ.get("MAX_MINUTOS_DIA", "60"))  # tope diario por defecto (editable en el panel)
 PAUSA_MAX_SEG = 600  # más de 10 min entre avisos = otra sesión
 
 
@@ -46,6 +46,15 @@ def iniciar():
                 nota TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS ix_eventos_codigo_ts ON eventos(codigo, ts);
+            CREATE TABLE IF NOT EXISTS ajustes (clave TEXT PRIMARY KEY, valor TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS evaluaciones (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                codigo TEXT NOT NULL REFERENCES alumnos(codigo),
+                ts INTEGER NOT NULL,
+                nivel TEXT NOT NULL,
+                fortalezas TEXT NOT NULL DEFAULT '',
+                reforzar TEXT NOT NULL DEFAULT ''
+            );
             CREATE TABLE IF NOT EXISTS sesiones (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 codigo TEXT NOT NULL REFERENCES alumnos(codigo),
@@ -67,6 +76,29 @@ def iniciar():
                 con.execute(f"ALTER TABLE {tabla} ADD COLUMN {col}")
             except sqlite3.OperationalError:
                 pass
+
+
+def max_min_dia():
+    """Tope diario de conversación por voz (ajuste del panel o variable de entorno)."""
+    try:
+        with conectar() as con:
+            r = con.execute("SELECT valor FROM ajustes WHERE clave='max_min_dia'").fetchone()
+        if r:
+            return max(5, min(240, int(r["valor"])))
+    except Exception:
+        pass
+    return MAX_MIN_DIA_DEFECTO
+
+
+def fijar_max_min_dia(minutos):
+    m = _acotar(minutos, 5, 240)
+    with conectar() as con:
+        con.execute(
+            "INSERT INTO ajustes (clave, valor) VALUES ('max_min_dia', ?)"
+            " ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor",
+            (str(m),),
+        )
+    return m
 
 
 def _codigo_nuevo(prefijo):
@@ -175,11 +207,12 @@ def resumen_alumno(con, codigo, hoy=None):
     pron = [f["pronunciacion"] for f in filas if f["pronunciacion"]]
     comp = [f["comprension"] for f in filas if f["comprension"]]
     ultima = max(dias) if dias else None
-    fila = con.execute("SELECT nombre FROM alumnos WHERE codigo=?", (codigo,)).fetchone()
+    fila = con.execute("SELECT nombre, compromiso_min FROM alumnos WHERE codigo=?", (codigo,)).fetchone()
     practicados = set(dias)
-    return {
+    base = {
         "codigo": codigo,
         "nombre": (fila["nombre"] if fila else "") or "",
+        "compromiso": (fila["compromiso_min"] if fila else 0) or 0,
         "dias7": [(hoy - dt.timedelta(days=k)) in practicados for k in range(6, -1, -1)],
         "dias_30": len(set(dias)),
         "racha": racha(dias, hoy),
@@ -189,6 +222,87 @@ def resumen_alumno(con, codigo, hoy=None):
         "pron": round(sum(pron) / len(pron), 1) if pron else None,
         "comp": round(sum(comp) / len(comp), 1) if comp else None,
     }
+    base.update(metricas(con, codigo, hoy))
+    return base
+
+
+CONV = ("conversacion_inicio", "conversacion", "pulso")
+
+
+def _min_sesion(f, ahora):
+    fin = min(f["fin_ts"] or ahora, f["inicio_ts"] + f["minutos"] * 60)
+    return max(0, fin - f["inicio_ts"]) / 60
+
+
+def metricas(con, codigo, hoy):
+    """Asistencia = días en que habló con el coach. Los ejercicios son complementarios."""
+    ahora = _ahora()
+    ev = con.execute(
+        "SELECT ts, tipo, aciertos, total, pronunciacion, comprension, nota FROM eventos WHERE codigo=? ORDER BY ts",
+        (codigo,),
+    ).fetchall()
+    if not ev:
+        return {
+            "inicio": None, "transcurridos": 0, "dias_habla": 0, "asistencia": None, "racha": 0,
+            "dias7": [False] * 7, "dias7_ej": [False] * 7, "min_habla_7d": 0, "min_habla_total": 0,
+            "cumplimiento": None, "dias_ej": 0, "acierto": None, "acierto_tend": None, "temas_debiles": [],
+            "temas_fuertes": [], "pron": None, "comp": None, "nivel_ini": None, "nivel_act": None,
+            "habla_hoy": False, "sin_hablar": None,
+        }
+    inicio = _dia(ev[0]["ts"])
+    transcurridos = (hoy - inicio).days + 1
+    ventana = min(transcurridos, 30)
+    desde = hoy - dt.timedelta(days=ventana - 1)
+    d_habla = {_dia(e["ts"]) for e in ev if e["tipo"] in CONV}
+    d_ej = {_dia(e["ts"]) for e in ev if e["tipo"] not in CONV}
+    habla_v = {d for d in d_habla if d >= desde}
+    ej_v = {d for d in d_ej if d >= desde}
+    ses = con.execute("SELECT inicio_ts, minutos, fin_ts FROM sesiones WHERE codigo=?", (codigo,)).fetchall()
+    sem = hoy - dt.timedelta(days=6)
+    min_total = sum(_min_sesion(f, ahora) for f in ses if _dia(f["inicio_ts"]) >= desde)
+    min_7 = sum(_min_sesion(f, ahora) for f in ses if _dia(f["inicio_ts"]) >= sem)
+    comp = con.execute("SELECT compromiso_min FROM alumnos WHERE codigo=?", (codigo,)).fetchone()["compromiso_min"]
+    cumpl = round(100 * min_total / (comp * ventana)) if comp else None
+
+    ej = [e for e in ev if e["tipo"] not in CONV and e["total"] > 0]
+    def pct(lista):
+        t = sum(e["total"] for e in lista)
+        return round(100 * sum(e["aciertos"] for e in lista) / t) if t else None
+    a7 = pct([e for e in ej if _dia(e["ts"]) >= sem])
+    a_prev = pct([e for e in ej if hoy - dt.timedelta(days=13) <= _dia(e["ts"]) < sem])
+    tend = (a7 - a_prev) if (a7 is not None and a_prev is not None) else None
+    temas = {}
+    for e in ej:
+        if e["nota"]:
+            a, t = temas.get(e["nota"], (0, 0))
+            temas[e["nota"]] = (a + e["aciertos"], t + e["total"])
+    lista = [(n, round(100 * a / t), t) for n, (a, t) in temas.items() if t >= 4]
+    debiles = [x for x in sorted(lista, key=lambda x: x[1]) if x[1] < 60][:3]
+    fuertes = [x for x in sorted(lista, key=lambda x: -x[1]) if x[1] >= 80][:3]
+    pr = [e["pronunciacion"] for e in ev if e["pronunciacion"]]
+    cp = [e["comprension"] for e in ev if e["comprension"]]
+    nv = con.execute("SELECT nivel FROM evaluaciones WHERE codigo=? ORDER BY ts", (codigo,)).fetchall()
+    return {
+        "inicio": inicio, "transcurridos": transcurridos, "dias_habla": len(habla_v),
+        "asistencia": round(100 * len(habla_v) / ventana), "racha": racha(d_habla, hoy),
+        "dias7": [(hoy - dt.timedelta(days=k)) in d_habla for k in range(6, -1, -1)],
+        "dias7_ej": [(hoy - dt.timedelta(days=k)) in d_ej for k in range(6, -1, -1)],
+        "min_habla_7d": round(min_7), "min_habla_total": round(min_total), "cumplimiento": cumpl,
+        "dias_ej": len(ej_v), "acierto": pct(ej), "acierto_tend": tend,
+        "temas_debiles": debiles, "temas_fuertes": fuertes,
+        "pron": round(sum(pr) / len(pr), 1) if pr else None, "comp": round(sum(cp) / len(cp), 1) if cp else None,
+        "nivel_ini": nv[0]["nivel"] if nv else None, "nivel_act": nv[-1]["nivel"] if nv else None,
+        "habla_hoy": hoy in d_habla,
+        "sin_hablar": (hoy - max(d_habla)).days if d_habla else None,
+    }
+
+
+def registrar_evaluacion(codigo, nivel, fortalezas="", reforzar=""):
+    with conectar() as con:
+        con.execute(
+            "INSERT INTO evaluaciones (codigo, ts, nivel, fortalezas, reforzar) VALUES (?,?,?,?,?)",
+            (codigo, _ahora(), str(nivel).strip()[:20], str(fortalezas)[:200], str(reforzar)[:200]),
+        )
 
 
 def resumen_empresa(token):
@@ -318,8 +432,8 @@ def minutos_programados(codigo):
 
 
 def fijar_compromiso(codigo, minutos):
-    """Minutos diarios que el alumno dijo en su entrevista (tope MAX_MIN_DIA)."""
-    m = _acotar(minutos, 5, MAX_MIN_DIA)
+    """Minutos diarios que el alumno dijo en su entrevista (tope max_min_dia())."""
+    m = _acotar(minutos, 5, max_min_dia())
     with conectar() as con:
         con.execute("UPDATE alumnos SET compromiso_min=? WHERE codigo=?", (m, codigo))
     return m
@@ -328,7 +442,7 @@ def fijar_compromiso(codigo, minutos):
 def fijar_minutos_sesion(empresa_id, minutos):
     with conectar() as con:
         con.execute(
-            "UPDATE empresas SET minutos_sesion=? WHERE id=?", (_acotar(minutos, 5, MAX_MIN_DIA), empresa_id)
+            "UPDATE empresas SET minutos_sesion=? WHERE id=?", (_acotar(minutos, 5, max_min_dia()), empresa_id)
         )
 
 
@@ -355,7 +469,7 @@ def iniciar_sesion(codigo, minutos, tema=""):
     pedido = _acotar(minutos, 5, 1000) if minutos else minutos_programados(codigo)
     with conectar() as con:
         con.execute("UPDATE sesiones SET fin_ts=? WHERE codigo=? AND fin_ts IS NULL", (_ahora(), codigo))
-    disponible = MAX_MIN_DIA - minutos_usados_hoy(codigo)
+    disponible = max_min_dia() - minutos_usados_hoy(codigo)
     m = min(pedido, disponible)
     if m < 3:
         return 0, True
