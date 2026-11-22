@@ -559,6 +559,47 @@ def pagina_gerente(datos):
         + "".join(filas) + "</table></div>"
         if filas else "<p class='fine'>Todavía no hay integrantes.</p>"
     )
+    # Calendario día por día
+    hoy = _hoy()
+    dias = [hoy - dt.timedelta(days=k) for k in range(13, -1, -1)]
+    cab = "".join(f"<th class='c'>{d.strftime('%d')}<br><span class='fine'>{'LMXJVSD'[d.weekday()]}</span></th>" for d in dias)
+    cel = {None: "<td class='c'><span class='q nx'></span></td>", 0: "<td class='c'><span class='q n0'></span></td>",
+           1: "<td class='c'><span class='q n1' title='solo ejercicios'></span></td>",
+           2: "<td class='c'><span class='q n2' title='habló con el coach'></span></td>"}
+    fcal = "".join(
+        f"<tr><td><b>{_e(a['nombre'] or a['codigo'])}</b></td>" + "".join(cel[x] for x in a["estado14"]) + "</tr>"
+        for a in al if a["inicio"]
+    )
+    calendario = (
+        "<h2>Asistencia día por día</h2><div class='panel'><table class='cal'><tr><th>Alumno</th>" + cab + "</tr>" + fcal + "</table></div>"
+        "<p class='fine'><span class='q n2'></span> habló con el coach (asistió) &nbsp; <span class='q n1'></span> solo hizo ejercicios &nbsp; "
+        "<span class='q n0'></span> no practicó &nbsp; <span class='q nx'></span> aún no empezaba</p>"
+        if fcal else ""
+    )
+    # Cómo van aprendiendo
+    tarjetas = []
+    for a in al:
+        if not a["inicio"]:
+            continue
+        barras = "".join(
+            f"<div class='sem'><div class='bar' style='height:{max(4, int(s['acierto'] or 0) * 0.6)}px'></div>"
+            f"<b>{'–' if s['acierto'] is None else str(s['acierto']) + '%'}</b>"
+            f"<span class='fine'>{s['hasta'].strftime('%d/%m')}</span><span class='fine'>{s['dias_habla']} d habló</span></div>"
+            for s in a["semanas"]
+        )
+        mej = "".join(
+            f"<li>{_e(t)}: de <b>{x}%</b> a <b>{y}%</b></li>" for t, x, y in a["temas_mejora"]
+        ) or "<li class='fine'>Aún no hay suficientes respuestas para medir mejoras por tema.</li>"
+        niv = (
+            f"{_e(a['nivel_ini'])} → <b>{_e(a['nivel_act'])}</b>" if a["nivel_act"] and a["nivel_act"] != a["nivel_ini"]
+            else (_e(a["nivel_act"]) if a["nivel_act"] else "sin evaluar")
+        )
+        tarjetas.append(
+            f"<div class='alu'><h3>{_e(a['nombre'] or a['codigo'])} <span class='fine'>· nivel {niv}</span></h3>"
+            f"<div class='fine'>Acierto en ejercicios por semana (primer intento)</div><div class='sems'>{barras}</div>"
+            f"<div class='fine' style='margin-top:8px'>Lo que está mejorando</div><ul>{mej}</ul></div>"
+        )
+    aprendiendo = ("<h2>Cómo van aprendiendo</h2><div class='alus'>" + "".join(tarjetas) + "</div>") if tarjetas else ""
     notas = (
         "<p class='fine'><b>Cómo leerlo.</b> La <b>asistencia</b> cuenta los días en que la persona habló con el coach "
         "(últimos 30 días o desde que empezó); los <b>ejercicios</b> son complemento. El <b>acierto</b> mide solo el primer intento. "
@@ -571,11 +612,15 @@ def pagina_gerente(datos):
         f"<title>Práctica de inglés · {_e(datos['empresa'])}</title><style>{ESTILO}"
         ".chip{display:inline-block;border-radius:20px;padding:2px 9px;font-size:12px;margin:1px 3px 1px 0;background:#eceef4}"
         ".chip.r{background:#fdecea;color:#8a2a21}.chip.v{background:#e6f4ec;color:#14563a}"
+        ".q{display:inline-block;width:18px;height:18px;border-radius:5px;vertical-align:middle}.n2{background:#1f7a4d}.n1{background:#7aa9e6}.n0{background:#e9d3d0}.nx{background:#eef0f4}"
+        "table.cal th.c,table.cal td.c{text-align:center;padding:8px 4px}table.cal th.c{font-size:11px}"
+        ".alus{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}.alu{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px 18px}.alu h3{margin:0 0 8px;font-size:16px}.alu ul{margin:4px 0 0;padding-left:18px}"
+        ".sems{display:flex;gap:12px;align-items:flex-end;min-height:110px;margin-top:6px}.sem{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px}.sem .bar{width:30px;background:linear-gradient(180deg,#c9a45c,#e6d2a3);border-radius:6px 6px 0 0}"
         "tr.alerta td{background:#fff9f1}.up{color:#1f7a4d;font-weight:700}.down{color:#b3261e;font-weight:700}"
         ".stat small{font-size:15px;color:var(--mut);font-weight:500}.top{max-width:1240px;margin:0 auto;padding:34px 28px 60px}"
         ".head{display:flex;align-items:center;gap:12px;margin-bottom:6px}.dot{width:10px;height:36px;border-radius:5px;background:var(--gold)}"
         "</style></head><body><div class='top'>"
         f"<div class='head'><div class='dot'></div><div><h1>{_e(datos['empresa'])}</h1>"
         "<p class='sub' style='margin:0'>Avance de práctica de inglés de tu equipo · English Master Coach</p></div></div>"
-        f"<div class='cards'>{cards}</div>{aviso}{tabla}{notas}</div></body></html>"
+        f"<div class='cards'>{cards}</div>{aviso}{tabla}{calendario}{aprendiendo}{notas}</div></body></html>"
     )

@@ -247,7 +247,7 @@ def metricas(con, codigo, hoy):
             "dias7": [False] * 7, "dias7_ej": [False] * 7, "min_habla_7d": 0, "min_habla_total": 0,
             "cumplimiento": None, "dias_ej": 0, "acierto": None, "acierto_tend": None, "temas_debiles": [],
             "temas_fuertes": [], "pron": None, "comp": None, "nivel_ini": None, "nivel_act": None,
-            "habla_hoy": False, "sin_hablar": None,
+            "habla_hoy": False, "sin_hablar": None, "estado14": [None] * 14, "semanas": [], "temas_mejora": [],
         }
     inicio = _dia(ev[0]["ts"])
     transcurridos = (hoy - inicio).days + 1
@@ -279,6 +279,34 @@ def metricas(con, codigo, hoy):
     lista = [(n, round(100 * a / t), t) for n, (a, t) in temas.items() if t >= 4]
     debiles = [x for x in sorted(lista, key=lambda x: x[1]) if x[1] < 60][:3]
     fuertes = [x for x in sorted(lista, key=lambda x: -x[1]) if x[1] >= 80][:3]
+    estado14 = []
+    for k in range(13, -1, -1):
+        dia = hoy - dt.timedelta(days=k)
+        estado14.append(None if dia < inicio else (2 if dia in d_habla else (1 if dia in d_ej else 0)))
+    semanas = []
+    for w in range(3, -1, -1):
+        fin_w = hoy - dt.timedelta(days=7 * w)
+        ini_w = fin_w - dt.timedelta(days=6)
+        if fin_w < inicio:
+            continue
+        sem_ej = [e for e in ej if ini_w <= _dia(e["ts"]) <= fin_w]
+        semanas.append({
+            "hasta": fin_w,
+            "dias_habla": sum(1 for x in d_habla if ini_w <= x <= fin_w),
+            "dias_ej": sum(1 for x in d_ej if ini_w <= x <= fin_w),
+            "min": round(sum(_min_sesion(f, ahora) for f in ses if ini_w <= _dia(f["inicio_ts"]) <= fin_w)),
+            "acierto": pct(sem_ej),
+        })
+    mejora = []
+    for nombre in temas:
+        lst = [e for e in ej if e["nota"] == nombre]
+        if sum(e["total"] for e in lst) < 8:
+            continue
+        mid = len(lst) // 2
+        antes, ahora_ = pct(lst[:mid]), pct(lst[mid:])
+        if antes is not None and ahora_ is not None and ahora_ - antes >= 15:
+            mejora.append((nombre, antes, ahora_))
+    mejora.sort(key=lambda x: x[1] - x[2])
     pr = [e["pronunciacion"] for e in ev if e["pronunciacion"]]
     cp = [e["comprension"] for e in ev if e["comprension"]]
     nv = con.execute("SELECT nivel FROM evaluaciones WHERE codigo=? ORDER BY ts", (codigo,)).fetchall()
@@ -294,6 +322,7 @@ def metricas(con, codigo, hoy):
         "nivel_ini": nv[0]["nivel"] if nv else None, "nivel_act": nv[-1]["nivel"] if nv else None,
         "habla_hoy": hoy in d_habla,
         "sin_hablar": (hoy - max(d_habla)).days if d_habla else None,
+        "estado14": estado14, "semanas": semanas, "temas_mejora": mejora[:3],
     }
 
 
