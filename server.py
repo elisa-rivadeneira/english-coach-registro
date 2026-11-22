@@ -4,6 +4,9 @@ Ejecutar:  uvicorn server:app --host 0.0.0.0 --port 8000
 El conector queda en  /mcp  y el panel del gerente en  /gerente?token=...
 """
 import html
+import threading
+
+import anyio
 
 from mcp.server.fastmcp import Context, FastMCP
 from starlette.requests import Request
@@ -89,7 +92,7 @@ def mi_progreso(ctx: Context) -> str:
 
 
 @mcp.tool()
-def generar_audio(ctx: Context, texto: str, voz_id: str = "af_heart", velocidad: float = 0.95):
+async def generar_audio(ctx: Context, texto: str, voz_id: str = "af_heart", velocidad: float = 0.95):
     """Convierte una frase corta en inglés (máximo 300 caracteres) en audio MP3 para que
     el alumno la escuche. Úsala para los ejercicios de escucha. Voces: af_heart, af_bella,
     af_nicole (mujer, EE. UU.), am_adam, am_michael (hombre, EE. UU.), bf_emma (mujer,
@@ -98,7 +101,8 @@ def generar_audio(ctx: Context, texto: str, voz_id: str = "af_heart", velocidad:
     if not codigo or not db.alumno_existe(codigo):
         return MENSAJE_SIN_CODIGO
     try:
-        datos = voz.audio_base64(texto, voz_id, velocidad)
+        # En un hilo aparte: generar la voz tarda segundos y no debe bloquear el servidor
+        datos = await anyio.to_thread.run_sync(voz.audio_base64, texto, voz_id, velocidad)
     except ValueError as e:
         return f"No se pudo generar el audio: {e}"
     return [AudioContent(type="audio", data=datos, mimeType="audio/mpeg")]
@@ -155,5 +159,8 @@ calificación oficial de nivel. En rojo, quienes llevan 2 días o más sin pract
 {''.join(filas)}</table></body></html>"""
     return HTMLResponse(pagina)
 
+
+# Cargar el modelo de voz al arrancar, para que la primera frase no espere la carga
+threading.Thread(target=lambda: voz._motor(), daemon=True).start()
 
 app = mcp.streamable_http_app()
