@@ -113,33 +113,90 @@ def _enviar_smtp(para: str, asunto: str, texto: str):
 
 
 ESTILO = """
-body{font:16px system-ui,sans-serif;margin:0;color:#1f1d1a;background:#faf8f4}
-.w{max-width:980px;margin:0 auto;padding:20px}
-h1{font-size:24px}a{color:#0b6bcb}
-table{border-collapse:collapse;width:100%;background:#fff}
-th,td{padding:8px 10px;border-bottom:1px solid #e3ded4;text-align:left;vertical-align:middle}
-th{font-size:13px;color:#6b665e}
-input{font:inherit;padding:8px;border:1px solid #cfc9bd;border-radius:8px}
-button,.b{font:inherit;font-weight:700;padding:8px 14px;border:0;border-radius:8px;background:#2f7d32;color:#fff;cursor:pointer;text-decoration:none;display:inline-block}
-button.g,.b.g{background:#e9e4d9;color:#1f1d1a}
-button.r{background:#b3261e}
-.f{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0;align-items:end}
-.ok{background:#e4f4e4;padding:10px 14px;border-radius:8px;margin:10px 0}
-.no{background:#fbe9e5;padding:10px 14px;border-radius:8px;margin:10px 0}
-.cod{font-family:ui-monospace,monospace;font-weight:700}
-.dia{display:inline-block;width:12px;height:12px;border-radius:3px;background:#ddd6c8;margin-right:2px}
-.dia.on{background:#2f7d32}
-.fine{color:#6b665e;font-size:13px}
-details{margin:6px 0}pre{white-space:pre-wrap;background:#f1ede4;padding:10px;border-radius:8px;font-size:13px}
+:root{--navy:#101a2e;--navy2:#18253f;--gold:#c9a45c;--ink:#1c2230;--mut:#6c7488;--line:#e6e8ee;--bg:#f4f5f8;--ok:#1f7a4d}
+*{box-sizing:border-box}
+body{font:15px/1.5 -apple-system,"Segoe UI",Inter,system-ui,sans-serif;margin:0;color:var(--ink);background:var(--bg)}
+a{color:#2a5bd7;text-decoration:none}
+.shell{display:flex;min-height:100vh}
+.side{width:264px;flex:none;background:linear-gradient(180deg,var(--navy),var(--navy2));color:#cfd6e6;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{padding:26px 22px 18px;border-bottom:1px solid rgba(255,255,255,.07)}
+.brand b{display:block;color:#fff;font-size:17px;letter-spacing:.3px}
+.brand span{color:var(--gold);font-size:11px;letter-spacing:2.2px;text-transform:uppercase}
+.nav{padding:14px 12px;flex:1}
+.nav h6{margin:16px 10px 6px;font-size:11px;font-weight:600;letter-spacing:1.6px;text-transform:uppercase;color:#7f8aa6}
+.nav a{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;border-radius:10px;color:#cfd6e6;margin:2px 0;transition:.15s}
+.nav a:hover{background:rgba(255,255,255,.06);color:#fff}
+.nav a.on{background:rgba(201,164,92,.16);color:#fff;box-shadow:inset 3px 0 0 var(--gold)}
+.nav a small{background:rgba(255,255,255,.09);border-radius:20px;padding:1px 8px;font-size:12px;color:#aab4cc}
+.nav a.nuevo{color:var(--gold)}
+.side .pie{padding:14px 22px;border-top:1px solid rgba(255,255,255,.07);font-size:13px}
+.side .pie a{color:#9aa6c2}
+.main{flex:1;min-width:0;padding:34px 40px 60px;max-width:1180px}
+h1{font-size:26px;margin:0 0 4px;letter-spacing:-.2px}
+h2{font-size:17px;margin:30px 0 10px}
+.sub{color:var(--mut);margin:0 0 22px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin:18px 0 26px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px 18px;box-shadow:0 1px 2px rgba(16,26,46,.04)}
+.stat b{display:block;font-size:28px;line-height:1.1}
+.stat span{color:var(--mut);font-size:13px}
+.panel{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 2px rgba(16,26,46,.04);overflow:auto}
+table{border-collapse:collapse;width:100%}
+th,td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+th{font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--mut);background:#fafbfc}
+tr:last-child td{border-bottom:0}
+input{font:inherit;padding:10px 12px;border:1px solid #d5d9e3;border-radius:10px;background:#fff}
+input:focus{outline:2px solid rgba(201,164,92,.5);border-color:var(--gold)}
+button,.b{font:inherit;font-weight:600;padding:9px 16px;border:0;border-radius:10px;background:var(--navy);color:#fff;cursor:pointer;text-decoration:none;display:inline-block;transition:.15s}
+button:hover,.b:hover{filter:brightness(1.2)}
+button.g,.b.g{background:#eceef4;color:var(--ink)}
+.b.gold{background:var(--gold);color:#1b1608}
+.f{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0;align-items:end}
+.ok{background:#e6f4ec;color:#14563a;border:1px solid #c7e6d5;padding:11px 15px;border-radius:12px;margin:12px 0}
+.aviso{background:#fff7e6;color:#7a5410;border:1px solid #f1deb0;padding:11px 15px;border-radius:12px;margin:12px 0}
+.no{background:#fdecea;color:#8a2a21;border:1px solid #f5cbc6;padding:11px 15px;border-radius:12px;margin:12px 0}
+.cod{font-family:ui-monospace,Menlo,monospace;font-weight:700;letter-spacing:.5px;background:#f1f2f7;padding:3px 8px;border-radius:7px;font-size:13px}
+.dia{display:inline-block;width:12px;height:12px;border-radius:4px;background:#dfe2ea;margin-right:3px}
+.dia.on{background:var(--ok)}
+.fine{color:var(--mut);font-size:13px}
+.acciones{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 20px}
+details{margin:6px 0}summary{cursor:pointer}pre{white-space:pre-wrap;background:#f6f7fa;padding:12px;border-radius:10px;font-size:13px;max-width:520px}
+.login{max-width:380px;margin:12vh auto;background:#fff;border:1px solid var(--line);border-radius:18px;padding:30px;box-shadow:0 10px 30px rgba(16,26,46,.08)}
+@media(max-width:820px){
+ .shell{flex-direction:column}
+ .side{width:100%;height:auto;position:static}
+ .nav{display:flex;gap:6px;overflow:auto;padding:10px}.nav h6{display:none}.nav a{white-space:nowrap}
+ .brand{padding:16px 18px}.side .pie{display:none}
+ .main{padding:22px 16px 50px}
+}
 """
 
 
-def pagina(titulo, cuerpo):
+def pagina(titulo, cuerpo, nav=True, activo=None):
+    if not nav:
+        return HTMLResponse(
+            "<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+            f"<title>{html.escape(titulo)}</title><style>{ESTILO}</style></head>"
+            f"<body><div class='login'>{cuerpo}</div></body></html>"
+        )
+    items = "".join(
+        f"<a href='/admin/empresa/{e['id']}' class='{'on' if activo == e['id'] else ''}'>"
+        f"<span>{html.escape(e['nombre'])}</span><small>{e['n']}</small></a>"
+        for e in db.listar_empresas()
+    )
+    lateral = (
+        "<aside class='side'><div class='brand'><b>English Master Coach</b><span>Administración</span></div>"
+        "<nav class='nav'>"
+        f"<a href='/admin' class='{'on' if activo == 0 else ''}'><span>Inicio</span></a>"
+        f"<h6>Empresas</h6>{items}"
+        "<a href='/admin#nueva' class='nuevo'><span>+ Nueva empresa</span></a></nav>"
+        "<div class='pie'><a href='/admin/salir'>Cerrar sesión</a></div></aside>"
+    )
     return HTMLResponse(
-        f"<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'>"
-        f"<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        f"<title>{html.escape(titulo)}</title><style>{ESTILO}</style></head>"
-        f"<body><div class='w'>{cuerpo}</div></body></html>"
+        "<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        f"<title>{html.escape(titulo)} · Administración</title><style>{ESTILO}</style></head>"
+        f"<body><div class='shell'>{lateral}<main class='main'>{cuerpo}</main></div></body></html>"
     )
 
 
@@ -150,14 +207,14 @@ def _e(x):
 def _login(error=""):
     if not _password():
         return pagina(
-            "Admin",
+            "Admin", nav=False, cuerpo=
             "<h1>Panel no activado</h1><p>Define la variable de entorno <b>ADMIN_PASSWORD</b> "
             "en Easypanel y vuelve a implementar.</p>",
         )
     aviso = "<div class='no'>Clave incorrecta.</div>" if error else ""
     return pagina(
-        "Entrar",
-        f"<h1>Panel de administración</h1>{aviso}<form method='post' action='/admin/login' class='f'>"
+        "Entrar", nav=False, cuerpo=
+        f"<h1>Panel de administración</h1><p class='sub'>English Master Coach</p>{aviso}<form method='post' action='/admin/login' class='f'>"
         "<input type='password' name='clave' placeholder='Clave' autofocus>"
         "<button>Entrar</button></form>",
     )
@@ -198,25 +255,34 @@ def registrar_rutas(mcp):
     async def inicio(request: Request):
         if not autenticado(request):
             return _login()
+        emps = db.listar_empresas()
+        total = sum(e["n"] for e in emps)
+        activos = 0
+        for e in emps:
+            activos += sum(1 for a in db.alumnos_de_empresa(e["id"]) if any(a["dias7"]))
         filas = "".join(
             f"<tr><td><a href='/admin/empresa/{e['id']}'><b>{_e(e['nombre'])}</b></a></td>"
-            f"<td class='cod'>{_e(e['prefijo'])}</td><td>{e['n']}</td>"
+            f"<td><span class='cod'>{_e(e['prefijo'])}</span></td><td>{e['n']}</td>"
             f"<td><a href='/gerente?token={_e(e['token_gerente'])}'>Panel del gerente</a></td></tr>"
-            for e in db.listar_empresas()
+            for e in emps
         )
         tabla = (
-            f"<table><tr><th>Empresa</th><th>Prefijo</th><th>Integrantes</th><th></th></tr>{filas}</table>"
+            f"<div class='panel'><table><tr><th>Empresa</th><th>Prefijo</th><th>Integrantes</th><th></th></tr>{filas}</table></div>"
             if filas
-            else "<p class='fine'>Todavía no hay empresas.</p>"
+            else "<p class='fine'>Todavía no hay empresas. Crea la primera abajo.</p>"
         )
         return pagina(
-            "Empresas",
-            "<h1>Empresas</h1>" + tabla +
-            "<h2>Nueva empresa</h2><form method='post' action='/admin/empresa' class='f'>"
+            "Inicio",
+            "<h1>Inicio</h1><p class='sub'>Resumen de tus empresas y su práctica.</p>"
+            f"<div class='cards'><div class='stat'><b>{len(emps)}</b><span>Empresas</span></div>"
+            f"<div class='stat'><b>{total}</b><span>Integrantes</span></div>"
+            f"<div class='stat'><b>{activos}</b><span>Practicaron esta semana</span></div></div>"
+            + tabla +
+            "<h2 id='nueva'>Nueva empresa</h2><form method='post' action='/admin/empresa' class='f'>"
             "<input name='nombre' placeholder='Nombre (Hotel Gloria)' required>"
             "<input name='prefijo' placeholder='Prefijo (GLO)' maxlength='4' size='6' required>"
-            "<button>Crear empresa</button></form>"
-            "<p><a href='/admin/salir'>Salir</a></p>",
+            "<button>Crear empresa</button></form>",
+            activo=0,
         )
 
     @mcp.custom_route("/admin/empresa", methods=["POST"])
@@ -257,20 +323,20 @@ def registrar_rutas(mcp):
             filas.append(
                 f"<tr><td><b>{_e(a['nombre'] or '(sin nombre)')}</b><div class='fine'>{_e(a['email'])}</div>"
                 f"<details><summary class='fine'>ver mensaje</summary><pre>{_e(texto)}</pre></details></td>"
-                f"<td class='cod'>{_e(a['codigo'])}</td><td>{_dias_html(a['dias7'])}</td>"
+                f"<td><span class='cod'>{_e(a['codigo'])}</span></td><td>{_dias_html(a['dias7'])}</td>"
                 f"<td>{a['racha']}</td><td>{ult}</td>"
                 f"<td>{boton}<div class='fine'>{_enviado(a['enviado_ts'])}</div></td>"
                 f"<td><form method='post' action='/admin/quitar/{_e(a['codigo'])}' onsubmit=\"return confirm('¿Quitar a este integrante y su historial?')\">"
                 "<button class='g'>Quitar</button></form></td></tr>"
             )
         tabla = (
-            "<table><tr><th>Integrante</th><th>Código</th><th>Últimos 7 días</th><th>Racha</th><th>Última</th><th>Correo</th><th></th></tr>"
-            + "".join(filas) + "</table>"
+            "<div class='panel'><table><tr><th>Integrante</th><th>Código</th><th>Últimos 7 días</th><th>Racha</th><th>Última</th><th>Correo</th><th></th></tr>"
+            + "".join(filas) + "</table></div>"
             if filas else "<p class='fine'>Aún no hay integrantes. Agrega el primero abajo.</p>"
         )
         nota_smtp = (
             "" if smtp else
-            "<div class='no'>El envío automático no está configurado (faltan las variables SMTP en Easypanel). "
+            "<div class='aviso'>El envío automático no está configurado (faltan las variables SMTP en Easypanel). "
             "Mientras tanto, usa «Abrir en mi correo»: se abre tu correo con el mensaje ya escrito.</div>"
         )
         pendientes = [a for a in alumnos if a["email"] and not a["enviado_ts"]]
@@ -282,14 +348,15 @@ def registrar_rutas(mcp):
         msg = f"<div class='{'ok' if ok else 'no'}'>{_e(aviso)}</div>" if aviso else ""
         return pagina(
             emp["nombre"],
-            f"<p><a href='/admin'>← Empresas</a></p><h1>{_e(emp['nombre'])}</h1>{msg}{nota_smtp}"
-            f"<p><a class='b g' href='/gerente?token={_e(emp['token_gerente'])}'>Abrir panel del gerente</a> {todos}</p>"
+            f"<h1>{_e(emp['nombre'])}</h1><p class='sub'>{len(alumnos)} integrante{'' if len(alumnos)==1 else 's'} · prefijo {_e(emp['prefijo'])}</p>{msg}{nota_smtp}"
+            f"<div class='acciones'><a class='b gold' href='/gerente?token={_e(emp['token_gerente'])}' target='_blank'>Abrir panel del gerente</a> {todos}</div>"
             + tabla +
             "<h2>Agregar integrante</h2><form method='post' action='/admin/alumno/" + str(eid) + "' class='f'>"
             "<input name='nombre' placeholder='Nombre completo' required size='28'>"
             "<input name='email' type='email' placeholder='Correo' required size='28'>"
             "<button>Agregar y generar código</button></form>"
             "<p class='fine'>El código aparece al instante. Luego envías el correo con el botón de su fila.</p>",
+            activo=eid,
         )
 
     @mcp.custom_route("/admin/empresa/{eid:int}", methods=["GET"])
