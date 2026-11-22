@@ -497,15 +497,21 @@ def _prom(vals):
     return round(sum(v) / len(v)) if v else None
 
 
+def _necesita_animo(a):
+    if a["sin_hablar"] is None:
+        return a["transcurridos"] >= 2  # inscrito hace 2 días o más y aún no habla con el coach
+    return a["sin_hablar"] >= 2
+
+
 def pagina_gerente(datos):
     al = datos["alumnos"]
     n = len(al)
     hablaron = sum(1 for a in al if any(a["dias7"]))
-    asis = _prom([a["asistencia"] for a in al if a["inicio"]])
+    asis = _prom([a["asistencia"] for a in al if a["empezo"]])
     cumpl = _prom([a["cumplimiento"] for a in al])
     acierto = _prom([a["acierto"] for a in al])
     minutos7 = sum(a["min_habla_7d"] for a in al)
-    atencion = [a for a in al if a["inicio"] is None or (a["sin_hablar"] is None or a["sin_hablar"] >= 2)]
+    atencion = [a for a in al if _necesita_animo(a)]
 
     def stat(valor, etiqueta):
         return f"<div class='stat'><b>{valor}</b><span>{etiqueta}</span></div>"
@@ -525,13 +531,13 @@ def pagina_gerente(datos):
 
     filas = []
     for a in sorted(al, key=lambda x: (x["asistencia"] is None, -(x["asistencia"] or 0))):
-        if a["inicio"] is None:
+        if not a["empezo"]:
             filas.append(
-                f"<tr class='alerta'><td><b>{_e(a['nombre'] or a['codigo'])}</b><div class='fine'>{_e(a['codigo'])}</div></td>"
-                "<td colspan='7' class='fine'>Todavía no empieza.</td></tr>"
+                f"<tr class='{'alerta' if _necesita_animo(a) else ''}'><td><b>{_e(a['nombre'] or a['codigo'])}</b><div class='fine'>{_e(a['codigo'])}</div></td>"
+                f"<td>{a['transcurridos']}</td><td colspan='6' class='fine'>Inscrito el {a['inscrito'].strftime('%d/%m')} · todavía no practica.</td></tr>"
             )
             continue
-        alerta = a["sin_hablar"] is None or a["sin_hablar"] >= 2
+        alerta = _necesita_animo(a)
         comp = f" de {a['compromiso']}" if a["compromiso"] else ""
         cu = "" if a["cumplimiento"] is None else f"<div class='fine'>{a['cumplimiento']}% de lo prometido</div>"
         tend = ""
@@ -559,27 +565,35 @@ def pagina_gerente(datos):
         + "".join(filas) + "</table></div>"
         if filas else "<p class='fine'>Todavía no hay integrantes.</p>"
     )
-    # Calendario día por día
-    hoy = _hoy()
-    dias = [hoy - dt.timedelta(days=k) for k in range(13, -1, -1)]
-    cab = "".join(f"<th class='c'>{d.strftime('%d')}<br><span class='fine'>{'LMXJVSD'[d.weekday()]}</span></th>" for d in dias)
-    cel = {None: "<td class='c'><span class='q nx'></span></td>", 0: "<td class='c'><span class='q n0'></span></td>",
-           1: "<td class='c'><span class='q n1' title='solo ejercicios'></span></td>",
-           2: "<td class='c'><span class='q n2' title='habló con el coach'></span></td>"}
-    fcal = "".join(
-        f"<tr><td><b>{_e(a['nombre'] or a['codigo'])}</b></td>" + "".join(cel[x] for x in a["estado14"]) + "</tr>"
-        for a in al if a["inicio"]
+    # Calendario desde el día de inscripción
+    cab = "".join(
+        f"<th class='c'>{k}</th>" for k in range(1, 31)
     )
+    cel = {None: "<td class='c'><span class='q nx'></span></td>", 0: "<td class='c'><span class='q n0'></span></td>",
+           1: "<td class='c'><span class='q n1'></span></td>", 2: "<td class='c'><span class='q n2'></span></td>"}
+    fcal = ""
+    for a in al:
+        celdas = ""
+        for k, x in enumerate(a["cal30"]):
+            dia = a["inscrito"] + dt.timedelta(days=a["cal_desde"] - 1 + k)
+            tip = dia.strftime("%d/%m") + {None: "", 0: " · no practicó", 1: " · solo ejercicios", 2: " · habló con el coach"}[x]
+            celdas += cel[x].replace("<span", f"<span title='Día {a['cal_desde'] + k} · {tip}'")
+        fcal += (
+            f"<tr><td><b>{_e(a['nombre'] or a['codigo'])}</b><div class='fine'>inscrito el {a['inscrito'].strftime('%d/%m')}{f" · mostrando días {a['cal_desde']} a {a['cal_desde'] + 29}" if a['cal_desde'] > 1 else ""}</div></td>"
+            + celdas + "</tr>"
+        )
     calendario = (
-        "<h2 id='asistencia'>Asistencia día por día</h2><div class='panel'><table class='cal'><tr><th>Alumno</th>" + cab + "</tr>" + fcal + "</table></div>"
+        "<h2 id='asistencia'>Asistencia día por día</h2>"
+        "<p class='fine' style='margin-top:-4px'>Cada fila empieza el día de inscripción de la persona (Día 1) y avanza hacia la derecha.</p>"
+        "<div class='panel'><table class='cal'><tr><th>Alumno</th>" + cab + "</tr>" + fcal + "</table></div>"
         "<p class='fine'><span class='q n2'></span> habló con el coach (asistió) &nbsp; <span class='q n1'></span> solo hizo ejercicios &nbsp; "
-        "<span class='q n0'></span> no practicó &nbsp; <span class='q nx'></span> aún no empezaba</p>"
+        "<span class='q n0'></span> no practicó &nbsp; <span class='q nx'></span> día que aún no llega</p>"
         if fcal else ""
     )
     # Cómo van aprendiendo
     tarjetas = []
     for a in al:
-        if not a["inicio"]:
+        if not a["empezo"]:
             continue
         barras = "".join(
             f"<div class='sem'><div class='bar' style='height:{max(4, int(s['acierto'] or 0) * 0.6)}px'></div>"
@@ -613,7 +627,7 @@ def pagina_gerente(datos):
         ".chip{display:inline-block;border-radius:20px;padding:2px 9px;font-size:12px;margin:1px 3px 1px 0;background:#eceef4}"
         ".chip.r{background:#fdecea;color:#8a2a21}.chip.v{background:#e6f4ec;color:#14563a}"
         ".q{display:inline-block;width:18px;height:18px;border-radius:5px;vertical-align:middle}.n2{background:#1f7a4d}.n1{background:#7aa9e6}.n0{background:#e9d3d0}.nx{background:#eef0f4}"
-        "table.cal th.c,table.cal td.c{text-align:center;padding:8px 4px}table.cal th.c{font-size:11px}"
+        "table.cal th.c,table.cal td.c{text-align:center;padding:8px 1px}table.cal th.c{font-size:10px}table.cal .q{width:12px;height:12px;border-radius:3px}table.cal td:first-child,table.cal th:first-child{min-width:170px}"
         ".alus{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}.alu{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px 18px}.alu h3{margin:0 0 8px;font-size:16px}.alu ul{margin:4px 0 0;padding-left:18px}"
         ".sems{display:flex;gap:12px;align-items:flex-end;min-height:110px;margin-top:6px}.sem{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px}.sem .bar{width:30px;background:linear-gradient(180deg,#c9a45c,#e6d2a3);border-radius:6px 6px 0 0}"
         "tr.alerta td{background:#fff9f1}.up{color:#1f7a4d;font-weight:700}.down{color:#b3261e;font-weight:700}"

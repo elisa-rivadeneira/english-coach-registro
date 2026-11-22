@@ -71,11 +71,17 @@ def iniciar():
             ("alumnos", "enviado_ts INTEGER"),
             ("empresas", "minutos_sesion INTEGER NOT NULL DEFAULT 15"),
             ("alumnos", "compromiso_min INTEGER NOT NULL DEFAULT 0"),
+            ("alumnos", "creado_ts INTEGER"),
         ):
             try:
                 con.execute(f"ALTER TABLE {tabla} ADD COLUMN {col}")
             except sqlite3.OperationalError:
                 pass
+        # Alumnos anteriores: su inscripción es su primera actividad (o hoy si no tienen)
+        con.execute(
+            "UPDATE alumnos SET creado_ts = COALESCE((SELECT MIN(ts) FROM eventos e WHERE e.codigo=alumnos.codigo),"
+            " CAST(strftime('%s','now') AS INTEGER)) WHERE creado_ts IS NULL"
+        )
 
 
 def max_min_dia():
@@ -120,7 +126,7 @@ def crear_empresa(nombre, prefijo, cantidad):
             c = _codigo_nuevo(prefijo)
             try:
                 con.execute(
-                    "INSERT INTO alumnos (codigo, empresa_id) VALUES (?,?)", (c, empresa_id)
+                    "INSERT INTO alumnos (codigo, empresa_id, creado_ts) VALUES (?,?,?)", (c, empresa_id, _ahora())
                 )
                 codigos.append(c)
             except sqlite3.IntegrityError:
@@ -241,15 +247,9 @@ def metricas(con, codigo, hoy):
         "SELECT ts, tipo, aciertos, total, pronunciacion, comprension, nota FROM eventos WHERE codigo=? ORDER BY ts",
         (codigo,),
     ).fetchall()
-    if not ev:
-        return {
-            "inicio": None, "transcurridos": 0, "dias_habla": 0, "asistencia": None, "racha": 0,
-            "dias7": [False] * 7, "dias7_ej": [False] * 7, "min_habla_7d": 0, "min_habla_total": 0,
-            "cumplimiento": None, "dias_ej": 0, "acierto": None, "acierto_tend": None, "temas_debiles": [],
-            "temas_fuertes": [], "pron": None, "comp": None, "nivel_ini": None, "nivel_act": None,
-            "habla_hoy": False, "sin_hablar": None, "estado14": [None] * 14, "semanas": [], "temas_mejora": [],
-        }
-    inicio = _dia(ev[0]["ts"])
+    fila_a = con.execute("SELECT creado_ts FROM alumnos WHERE codigo=?", (codigo,)).fetchone()
+    primeros = [x for x in (fila_a["creado_ts"] if fila_a else None, ev[0]["ts"] if ev else None) if x]
+    inicio = _dia(min(primeros)) if primeros else hoy
     transcurridos = (hoy - inicio).days + 1
     ventana = min(transcurridos, 30)
     desde = hoy - dt.timedelta(days=ventana - 1)
@@ -279,10 +279,13 @@ def metricas(con, codigo, hoy):
     lista = [(n, round(100 * a / t), t) for n, (a, t) in temas.items() if t >= 4]
     debiles = [x for x in sorted(lista, key=lambda x: x[1]) if x[1] < 60][:3]
     fuertes = [x for x in sorted(lista, key=lambda x: -x[1]) if x[1] >= 80][:3]
-    estado14 = []
-    for k in range(13, -1, -1):
-        dia = hoy - dt.timedelta(days=k)
-        estado14.append(None if dia < inicio else (2 if dia in d_habla else (1 if dia in d_ej else 0)))
+    # Calendario desde el día de inscripción: 30 casillas (Día 1 = inscripción); si ya pasaron más
+    # de 30 días se muestran los últimos 30.
+    corrim = max(0, transcurridos - 30)
+    cal30 = []
+    for k in range(30):
+        dia = inicio + dt.timedelta(days=corrim + k)
+        cal30.append(None if dia > hoy else (2 if dia in d_habla else (1 if dia in d_ej else 0)))
     semanas = []
     for w in range(3, -1, -1):
         fin_w = hoy - dt.timedelta(days=7 * w)
@@ -312,7 +315,7 @@ def metricas(con, codigo, hoy):
     nv = con.execute("SELECT nivel FROM evaluaciones WHERE codigo=? ORDER BY ts", (codigo,)).fetchall()
     return {
         "inicio": inicio, "transcurridos": transcurridos, "dias_habla": len(habla_v),
-        "asistencia": round(100 * len(habla_v) / ventana), "racha": racha(d_habla, hoy),
+        "asistencia": round(100 * len(habla_v) / ventana) if ventana else 0, "racha": racha(d_habla, hoy),
         "dias7": [(hoy - dt.timedelta(days=k)) in d_habla for k in range(6, -1, -1)],
         "dias7_ej": [(hoy - dt.timedelta(days=k)) in d_ej for k in range(6, -1, -1)],
         "min_habla_7d": round(min_7), "min_habla_total": round(min_total), "cumplimiento": cumpl,
@@ -322,7 +325,7 @@ def metricas(con, codigo, hoy):
         "nivel_ini": nv[0]["nivel"] if nv else None, "nivel_act": nv[-1]["nivel"] if nv else None,
         "habla_hoy": hoy in d_habla,
         "sin_hablar": (hoy - max(d_habla)).days if d_habla else None,
-        "estado14": estado14, "semanas": semanas, "temas_mejora": mejora[:3],
+        "cal30": cal30, "cal_desde": corrim + 1, "empezo": bool(ev), "inscrito": inicio, "semanas": semanas, "temas_mejora": mejora[:3],
     }
 
 
@@ -394,8 +397,8 @@ def agregar_alumno(empresa_id, nombre, email):
             c = _codigo_nuevo(emp["prefijo"])
             try:
                 con.execute(
-                    "INSERT INTO alumnos (codigo, empresa_id, nombre, email) VALUES (?,?,?,?)",
-                    (c, empresa_id, nombre.strip()[:80], email.strip()[:120]),
+                    "INSERT INTO alumnos (codigo, empresa_id, nombre, email, creado_ts) VALUES (?,?,?,?,?)",
+                    (c, empresa_id, nombre.strip()[:80], email.strip()[:120], _ahora()),
                 )
                 return c
             except sqlite3.IntegrityError:
