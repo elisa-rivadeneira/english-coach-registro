@@ -1,0 +1,4 @@
+mcp>=1.20,<2
+uvicorn>=0.30
+kokoro-onnx
+soundfile

@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+registro.db*
+cache_audio/
+modelos/
+.venv/
