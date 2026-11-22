@@ -28,6 +28,8 @@ def _codigo(ctx: Context) -> str:
     req = ctx.request_context.request
     headers = req.headers if req is not None else {}
     codigo = (headers.get("x-codigo") or "").strip()
+    if not codigo and req is not None:
+        codigo = (req.query_params.get("codigo") or "").strip()
     if not codigo:
         auth = headers.get("authorization") or ""
         if auth.lower().startswith("bearer "):
