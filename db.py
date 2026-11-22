@@ -7,6 +7,7 @@ import sqlite3
 DB_PATH = os.environ.get("REGISTRO_DB", "registro.db")
 LIMA = dt.timezone(dt.timedelta(hours=-5))
 ALFABETO = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # sin 0/O/1/I para evitar confusiones
+MAX_MIN_DIA = int(os.environ.get("MAX_MINUTOS_DIA", "60"))  # tope diario de conversación por voz
 PAUSA_MAX_SEG = 600  # más de 10 min entre avisos = otra sesión
 
 
@@ -60,6 +61,7 @@ def iniciar():
             ("alumnos", "email TEXT NOT NULL DEFAULT ''"),
             ("alumnos", "enviado_ts INTEGER"),
             ("empresas", "minutos_sesion INTEGER NOT NULL DEFAULT 15"),
+            ("alumnos", "compromiso_min INTEGER NOT NULL DEFAULT 0"),
         ):
             try:
                 con.execute(f"ALTER TABLE {tabla} ADD COLUMN {col}")
@@ -261,7 +263,7 @@ def alumnos_de_empresa(empresa_id):
     """Alumnos con su resumen de práctica, correo y fecha de envío."""
     with conectar() as con:
         filas = con.execute(
-            "SELECT codigo, nombre, email, enviado_ts FROM alumnos WHERE empresa_id=? ORDER BY nombre, codigo",
+            "SELECT codigo, nombre, email, enviado_ts, compromiso_min FROM alumnos WHERE empresa_id=? ORDER BY nombre, codigo",
             (empresa_id,),
         ).fetchall()
         salida = []
@@ -269,6 +271,7 @@ def alumnos_de_empresa(empresa_id):
             r = resumen_alumno(con, f["codigo"])
             r["email"] = f["email"]
             r["enviado_ts"] = f["enviado_ts"]
+            r["compromiso"] = f["compromiso_min"]
             salida.append(r)
         return salida
 
@@ -302,34 +305,67 @@ def _ahora():
 
 
 def minutos_programados(codigo):
-    """Duración de conversación configurada para la empresa del alumno."""
+    """Duración por defecto: el compromiso del alumno; si no lo dijo, el de su empresa."""
     with conectar() as con:
         r = con.execute(
-            "SELECT e.minutos_sesion FROM alumnos a JOIN empresas e ON e.id=a.empresa_id WHERE a.codigo=?",
+            "SELECT a.compromiso_min, e.minutos_sesion FROM alumnos a JOIN empresas e ON e.id=a.empresa_id"
+            " WHERE a.codigo=?",
             (codigo,),
         ).fetchone()
-        return int(r["minutos_sesion"]) if r else 15
+    if not r:
+        return 15
+    return int(r["compromiso_min"] or r["minutos_sesion"] or 15)
+
+
+def fijar_compromiso(codigo, minutos):
+    """Minutos diarios que el alumno dijo en su entrevista (tope MAX_MIN_DIA)."""
+    m = _acotar(minutos, 5, MAX_MIN_DIA)
+    with conectar() as con:
+        con.execute("UPDATE alumnos SET compromiso_min=? WHERE codigo=?", (m, codigo))
+    return m
 
 
 def fijar_minutos_sesion(empresa_id, minutos):
     with conectar() as con:
         con.execute(
-            "UPDATE empresas SET minutos_sesion=? WHERE id=?", (_acotar(minutos, 5, 90), empresa_id)
+            "UPDATE empresas SET minutos_sesion=? WHERE id=?", (_acotar(minutos, 5, MAX_MIN_DIA), empresa_id)
         )
+
+
+def minutos_usados_hoy(codigo):
+    """Minutos de conversación ya usados hoy (hora de Lima), sin pasar de lo programado."""
+    hoy = dt.datetime.now(LIMA).date()
+    desde = int(dt.datetime.combine(hoy, dt.time(), LIMA).timestamp())
+    ahora = _ahora()
+    with conectar() as con:
+        filas = con.execute(
+            "SELECT inicio_ts, minutos, fin_ts FROM sesiones WHERE codigo=? AND inicio_ts>=?",
+            (codigo, desde),
+        ).fetchall()
+    total = 0.0
+    for f in filas:
+        fin = min(f["fin_ts"] or ahora, f["inicio_ts"] + f["minutos"] * 60)
+        total += max(0, fin - f["inicio_ts"]) / 60
+    return round(total)
 
 
 def iniciar_sesion(codigo, minutos, tema=""):
-    """Abre una conversación (cierra las abiertas anteriores). Devuelve los minutos reales."""
-    minutos = _acotar(minutos, 5, 90) if minutos else minutos_programados(codigo)
-    ahora = _ahora()
+    """Abre una conversación (cierra las abiertas). Devuelve (minutos, tope_aplicado).
+    minutos=0 si ya se cumplió el tope diario."""
+    pedido = _acotar(minutos, 5, 1000) if minutos else minutos_programados(codigo)
     with conectar() as con:
-        con.execute("UPDATE sesiones SET fin_ts=? WHERE codigo=? AND fin_ts IS NULL", (ahora, codigo))
+        con.execute("UPDATE sesiones SET fin_ts=? WHERE codigo=? AND fin_ts IS NULL", (_ahora(), codigo))
+    disponible = MAX_MIN_DIA - minutos_usados_hoy(codigo)
+    m = min(pedido, disponible)
+    if m < 3:
+        return 0, True
+    with conectar() as con:
         con.execute(
             "INSERT INTO sesiones (codigo, inicio_ts, minutos, tema) VALUES (?,?,?,?)",
-            (codigo, ahora, minutos, str(tema)[:80]),
+            (codigo, _ahora(), m, str(tema)[:80]),
         )
     registrar(codigo, "conversacion_inicio")
-    return minutos
+    return m, m < pedido
 
 
 def sesion_abierta(codigo):

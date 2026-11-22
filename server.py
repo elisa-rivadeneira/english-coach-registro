@@ -94,17 +94,40 @@ REGLAS_SESION = (
 
 
 @mcp.tool()
-def iniciar_sesion(ctx: Context, minutos: int = 0, tema: str = "") -> str:
-    """Llámala AL EMPEZAR una conversación por voz. Abre un reloj en el servidor y devuelve la
-    duración programada y la agenda. minutos: duración pedida por la persona (por ejemplo 15, 30
-    o 60); si es 0 se usa la duración que programó su empresa. tema: tema de la conversación."""
+def fijar_compromiso(ctx: Context, minutos: int) -> str:
+    """Guarda cuántos minutos al día se comprometió a practicar la persona (lo dice en la entrevista
+    inicial). El máximo es 60. Después, iniciar_sesion usa este tiempo por defecto."""
     codigo = _codigo(ctx)
     if not codigo or not db.alumno_existe(codigo):
         return MENSAJE_SIN_CODIGO
-    m = db.iniciar_sesion(codigo, minutos, tema)
+    m = db.fijar_compromiso(codigo, minutos)
+    aviso = f" (pidió {minutos}; el máximo es {db.MAX_MIN_DIA})" if minutos > db.MAX_MIN_DIA else ""
+    return f"Compromiso guardado: {m} minutos al día{aviso}."
+
+
+@mcp.tool()
+def iniciar_sesion(ctx: Context, minutos: int = 0, tema: str = "") -> str:
+    """Llámala AL EMPEZAR una conversación por voz. Abre un reloj en el servidor y devuelve la
+    duración programada y la agenda. minutos: duración pedida por la persona (por ejemplo 15, 30
+    o 60); si es 0 se usa el tiempo que ella se comprometió a practicar cada día (dicho en su
+    entrevista). El servidor aplica un tope diario de 60 minutos que no se puede superar. tema: tema de la conversación."""
+    codigo = _codigo(ctx)
+    if not codigo or not db.alumno_existe(codigo):
+        return MENSAJE_SIN_CODIGO
+    m, topado = db.iniciar_sesion(codigo, minutos, tema)
+    if m == 0:
+        return (
+            f"La persona ya cumplió su tope de {db.MAX_MIN_DIA} minutos de conversación por hoy. "
+            "No inicies otra conversación: felicítala por su constancia, dile que mañana sigue y, si quiere, "
+            "ofrécele repasar con los ejercicios de su entrenador."
+        )
+    nota = (
+        f" (el máximo diario es {db.MAX_MIN_DIA} min en total; ya usó {db.minutos_usados_hoy(codigo)} hoy)"
+        if topado else ""
+    )
     agenda = "\n".join(f"- {d} min: {t}" for d, t in _fases(m))
     return (
-        f"Conversación programada de {m} minutos. El reloj ya corre en el servidor.\n"
+        f"Conversación programada de {m} minutos{nota}. El reloj ya corre en el servidor.\n"
         f"Agenda sugerida:\n{agenda}\n{REGLAS_SESION}"
     )
 

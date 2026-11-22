@@ -323,14 +323,14 @@ def registrar_rutas(mcp):
             filas.append(
                 f"<tr><td><b>{_e(a['nombre'] or '(sin nombre)')}</b><div class='fine'>{_e(a['email'])}</div>"
                 f"<details><summary class='fine'>ver mensaje</summary><pre>{_e(texto)}</pre></details></td>"
-                f"<td><span class='cod'>{_e(a['codigo'])}</span></td><td>{_dias_html(a['dias7'])}</td>"
+                f"<td><span class='cod'>{_e(a['codigo'])}</span></td><td>{_e(str(a['compromiso']) + ' min/día') if a['compromiso'] else '<span class=fine>–</span>'}</td><td>{_dias_html(a['dias7'])}</td>"
                 f"<td>{a['racha']}</td><td>{ult}</td>"
                 f"<td>{boton}<div class='fine'>{_enviado(a['enviado_ts'])}</div></td>"
                 f"<td><form method='post' action='/admin/quitar/{_e(a['codigo'])}' onsubmit=\"return confirm('¿Quitar a este integrante y su historial?')\">"
                 "<button class='g'>Quitar</button></form></td></tr>"
             )
         tabla = (
-            "<div class='panel'><table><tr><th>Integrante</th><th>Código</th><th>Últimos 7 días</th><th>Racha</th><th>Última</th><th>Correo</th><th></th></tr>"
+            "<div class='panel'><table><tr><th>Integrante</th><th>Código</th><th>Compromiso</th><th>Últimos 7 días</th><th>Racha</th><th>Última</th><th>Correo</th><th></th></tr>"
             + "".join(filas) + "</table></div>"
             if filas else "<p class='fine'>Aún no hay integrantes. Agrega el primero abajo.</p>"
         )
@@ -352,9 +352,10 @@ def registrar_rutas(mcp):
             f"<div class='acciones'><a class='b gold' href='/gerente?token={_e(emp['token_gerente'])}' target='_blank'>Abrir panel del gerente</a> {todos}</div>"
             + tabla +
             "<h2>Duración de la conversación por voz</h2>"
+            f"<p class='fine'>Cada alumno dice en su entrevista cuántos minutos al día se compromete (tope {db.MAX_MIN_DIA}). Este valor se usa solo si no lo dijo.</p>"
             f"<form method='post' action='/admin/minutos/{eid}' class='f'>"
-            f"<input name='minutos' type='number' min='5' max='90' value='{int(emp.get('minutos_sesion') or 15)}' style='width:90px'> "
-            "<span class='fine'>minutos (15, 30, 60…). El coach no cerrará antes de este tiempo.</span>"
+            f"<input name='minutos' type='number' min='5' max='60' value='{int(emp.get('minutos_sesion') or 15)}' style='width:90px'> "
+            "<span class='fine'>minutos por defecto (tope 60).</span>"
             "<button class='g'>Guardar</button></form>"
             "<h2>Agregar integrante</h2><form method='post' action='/admin/alumno/" + str(eid) + "' class='f'>"
             "<input name='nombre' placeholder='Nombre completo' required size='28'>"
@@ -381,7 +382,7 @@ def registrar_rutas(mcp):
         except ValueError:
             m = 15
         db.fijar_minutos_sesion(eid, m)
-        return await _vista_empresa(request, eid, f"Las conversaciones por voz durarán {max(5, min(90, m))} minutos.")
+        return await _vista_empresa(request, eid, f"Las conversaciones por voz durarán {max(5, min(db.MAX_MIN_DIA, m))} minutos.")
 
     @mcp.custom_route("/admin/alumno/{eid:int}", methods=["POST"])
     async def nuevo_alumno(request: Request):
