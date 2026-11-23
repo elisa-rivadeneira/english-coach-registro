@@ -238,6 +238,9 @@ async def gerente(request: Request) -> HTMLResponse:
 import panel  # noqa: E402
 
 panel.registrar_rutas(mcp)
+import cuenta  # noqa: E402
+
+cuenta.registrar_rutas(mcp)
 
 # Cargar el modelo de voz al arrancar, para que la primera frase no espere la carga
 threading.Thread(target=lambda: voz._motor(), daemon=True).start()

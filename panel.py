@@ -87,6 +87,28 @@ Guía con capturas y solución de problemas: {GUIA_URL}
     return asunto, texto
 
 
+def mensaje_dueno(request: Request, d: dict, clave: str):
+    """(asunto, texto) con el acceso del dueño a su panel."""
+    nombre = (d["nombre"] or "").split(" ")[0] or "hola"
+    asunto = f"Tu panel de {COACH}: {d['empresa']}"
+    texto = f"""Hola {nombre},
+
+Ya puedes ver el avance de práctica de inglés de tu equipo en {d['empresa']}.
+
+Entra aquí: {base_url(request)}/cuenta
+Correo: {d['email']}
+Clave temporal: {clave}
+
+Por seguridad, cámbiala la primera vez desde «Cambiar clave» (barra lateral izquierda).
+
+En el panel ves quién habló con el coach cada día, cuánto practicó frente a lo que se comprometió,
+cómo van aprendiendo y a quién conviene animar.
+
+{COACH}
+"""
+    return asunto, texto
+
+
 def _smtp_listo() -> bool:
     return bool(os.environ.get("SMTP_HOST") and os.environ.get("SMTP_FROM"))
 
@@ -304,7 +326,7 @@ def registrar_rutas(mcp):
             return pagina("Error", "<div class='no'>Ese prefijo ya existe. Usa otro.</div><a href='/admin'>Volver</a>")
         return RedirectResponse(f"/admin/empresa/{eid}", status_code=303)
 
-    async def _vista_empresa(request, eid, aviso="", ok=True):
+    async def _vista_empresa(request, eid, aviso="", ok=True, extra=""):
         emp = db.empresa_por_id(eid)
         if not emp:
             return pagina("No existe", "<p>Empresa no encontrada.</p><a href='/admin'>Volver</a>")
@@ -353,7 +375,28 @@ def registrar_rutas(mcp):
             f"<button>Enviar a los {len(pendientes)} pendientes</button></form>"
             if smtp and pendientes else ""
         )
-        msg = f"<div class='{'ok' if ok else 'no'}'>{_e(aviso)}</div>" if aviso else ""
+        msg = (f"<div class='{'ok' if ok else 'no'}'>{_e(aviso)}</div>" if aviso else "") + extra
+        duenos = db.listar_duenos(eid)
+        filas_d = "".join(
+            f"<tr><td><b>{_e(x['nombre'] or '(sin nombre)')}</b><div class='fine'>{_e(x['email'])}</div></td>"
+            f"<td class='fine'>{'nunca ingresó' if not x['ultimo_ingreso_ts'] else 'último ingreso ' + dt.datetime.fromtimestamp(x['ultimo_ingreso_ts'], db.LIMA).strftime('%d/%m %H:%M')}</td>"
+            f"<td><form method='post' action='/admin/dueno-reiniciar/{x['id']}' style='display:inline' "
+            "onsubmit=\"return confirm('Se generará una clave nueva y la anterior dejará de servir. ¿Continuar?')\">"
+            "<button class='g'>Nueva clave</button></form> "
+            f"<form method='post' action='/admin/dueno-quitar/{x['id']}' style='display:inline' "
+            "onsubmit=\"return confirm('¿Quitar esta cuenta?')\"><button class='g'>Quitar</button></form></td></tr>"
+            for x in duenos
+        )
+        bloque_duenos = (
+            "<h2>Cuenta del dueño de la empresa</h2>"
+            "<p class='fine'>Cada dueño entra con su correo y su clave en <b>/cuenta</b> y ve solo el panel de los alumnos de esta empresa.</p>"
+            + (f"<div class='panel'><table><tr><th>Dueño</th><th>Acceso</th><th></th></tr>{filas_d}</table></div>" if filas_d else "")
+            + f"<form method='post' action='/admin/dueno/{eid}' class='f'>"
+            "<input name='nombre' placeholder='Nombre del dueño' required size='24'>"
+            "<input name='email' type='email' placeholder='Correo' required size='26'>"
+            + ("<label class='fine'><input type='checkbox' name='enviar' value='1' checked> enviar acceso por correo</label>" if smtp else "")
+            + "<button>Crear cuenta</button></form>"
+        )
         return pagina(
             emp["nombre"],
             f"<h1>{_e(emp['nombre'])}</h1><p class='sub'>{len(alumnos)} integrante{'' if len(alumnos)==1 else 's'} · prefijo {_e(emp['prefijo'])}</p>{msg}{nota_smtp}"
@@ -365,6 +408,7 @@ def registrar_rutas(mcp):
             f"<input name='minutos' type='number' min='5' max='60' value='{int(emp.get('minutos_sesion') or 15)}' style='width:90px'> "
             "<span class='fine'>minutos por defecto (tope 60).</span>"
             "<button class='g'>Guardar</button></form>"
+            + bloque_duenos +
             "<h2>Agregar integrante</h2><form method='post' action='/admin/alumno/" + str(eid) + "' class='f'>"
             "<input name='nombre' placeholder='Nombre completo' required size='28'>"
             "<input name='email' type='email' placeholder='Correo' required size='28'>"
@@ -415,6 +459,64 @@ def registrar_rutas(mcp):
             m = 15
         db.fijar_minutos_sesion(eid, m)
         return await _vista_empresa(request, eid, f"Las conversaciones por voz durarán {max(5, min(db.max_min_dia(), m))} minutos.")
+
+    async def _entrega_dueno(request, d, clave, enviar):
+        """Arma el aviso con el acceso (se muestra una sola vez) y, si se pidió, lo envía por correo."""
+        asunto, texto = mensaje_dueno(request, d, clave)
+        estado = ""
+        if enviar and _smtp_listo():
+            try:
+                await anyio.to_thread.run_sync(_enviar_smtp, d["email"], asunto, texto)
+                estado = f"Se envió el acceso a {d['email']}. "
+            except Exception as ex:
+                estado = f"No se pudo enviar el correo ({str(ex)[:100]}). "
+        mailto = "mailto:" + urllib.parse.quote(d["email"]) + "?subject=" + urllib.parse.quote(asunto) + "&body=" + urllib.parse.quote(texto)
+        extra = (
+            f"<div class='aviso'><b>Guarda esta clave: no se vuelve a mostrar.</b> {_e(estado)}<br>"
+            f"Correo: <span class='cod'>{_e(d['email'])}</span> · Clave temporal: <span class='cod'>{_e(clave)}</span><br>"
+            f"<a href='{_e(mailto)}'>Abrir en mi correo</a></div>"
+        )
+        return extra
+
+    @mcp.custom_route("/admin/dueno/{eid:int}", methods=["POST"])
+    async def nuevo_dueno(request: Request):
+        if not autenticado(request):
+            return _login()
+        eid = request.path_params["eid"]
+        d = await request.form()
+        nombre, email = str(d.get("nombre", "")).strip(), str(d.get("email", "")).strip()
+        if not nombre or "@" not in email:
+            return await _vista_empresa(request, eid, "Escribe el nombre y un correo válido.", ok=False)
+        try:
+            did, clave = db.crear_dueno(eid, nombre, email)
+        except ValueError as ex:
+            return await _vista_empresa(request, eid, str(ex) + ".", ok=False)
+        ficha = db.dueno_por_id(did)
+        extra = await _entrega_dueno(request, ficha, clave, bool(d.get("enviar")))
+        return await _vista_empresa(request, eid, f"Cuenta creada para {nombre}.", extra=extra)
+
+    @mcp.custom_route("/admin/dueno-reiniciar/{did:int}", methods=["POST"])
+    async def reiniciar_dueno(request: Request):
+        if not autenticado(request):
+            return _login()
+        did = request.path_params["did"]
+        ficha = db.dueno_por_id(did)
+        if not ficha:
+            return RedirectResponse("/admin", status_code=303)
+        clave = db.reiniciar_clave_dueno(did)
+        extra = await _entrega_dueno(request, ficha, clave, False)
+        return await _vista_empresa(request, ficha["empresa_id"], f"Clave nueva para {ficha['nombre'] or ficha['email']}.", extra=extra)
+
+    @mcp.custom_route("/admin/dueno-quitar/{did:int}", methods=["POST"])
+    async def quitar_dueno(request: Request):
+        if not autenticado(request):
+            return _login()
+        did = request.path_params["did"]
+        ficha = db.dueno_por_id(did)
+        if not ficha:
+            return RedirectResponse("/admin", status_code=303)
+        db.quitar_dueno(did)
+        return await _vista_empresa(request, ficha["empresa_id"], "Cuenta quitada.")
 
     @mcp.custom_route("/admin/alumno/{eid:int}", methods=["POST"])
     async def nuevo_alumno(request: Request):
@@ -503,7 +605,7 @@ def _necesita_animo(a):
     return a["sin_hablar"] >= 2
 
 
-def pagina_gerente(datos):
+def pagina_gerente(datos, cuenta=None):
     al = datos["alumnos"]
     n = len(al)
     hablaron = sum(1 for a in al if any(a["dias7"]))
@@ -645,7 +747,13 @@ def pagina_gerente(datos):
         "<a href='#asistencia'><span>Asistencia día por día</span></a>"
         "<a href='#aprendizaje'><span>Cómo van aprendiendo</span></a>"
         "<a href='#leer'><span>Cómo leerlo</span></a></nav>"
-        f"<div class='pie'>Actualizado {_hoy().strftime('%d/%m/%Y')}</div></aside>"
+        "<div class='pie'>"
+        + (
+            f"<div style='margin-bottom:6px'>{_e(cuenta['nombre'] or cuenta['email'])}</div>"
+            "<a href='/cuenta/clave'>Cambiar clave</a> · <a href='/cuenta/salir'>Cerrar sesión</a><br>"
+            if cuenta else ""
+        )
+        + f"<span style='color:#7f8aa6'>Actualizado {_hoy().strftime('%d/%m/%Y')}</span></div></aside>"
         "<main class='main g'>"
         f"<section id='resumen'><h1>Resumen del equipo</h1><p class='sub'>Avance de práctica de inglés de {_e(datos['empresa'])}.</p>"
         f"<div class='cards'>{cards}</div>{aviso}</section>"

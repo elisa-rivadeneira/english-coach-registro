@@ -1,5 +1,7 @@
 """Base de datos del registro de práctica (SQLite) y cálculos de reporte."""
 import datetime as dt
+import hashlib
+import hmac
 import os
 import secrets
 import sqlite3
@@ -47,6 +49,15 @@ def iniciar():
             );
             CREATE INDEX IF NOT EXISTS ix_eventos_codigo_ts ON eventos(codigo, ts);
             CREATE TABLE IF NOT EXISTS ajustes (clave TEXT PRIMARY KEY, valor TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS duenos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER NOT NULL REFERENCES empresas(id),
+                nombre TEXT NOT NULL DEFAULT '',
+                email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                clave_hash TEXT NOT NULL,
+                creado_ts INTEGER NOT NULL,
+                ultimo_ingreso_ts INTEGER
+            );
             CREATE TABLE IF NOT EXISTS evaluaciones (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 codigo TEXT NOT NULL REFERENCES alumnos(codigo),
@@ -342,8 +353,19 @@ def resumen_empresa(token):
         emp = con.execute(
             "SELECT * FROM empresas WHERE token_gerente=?", (token,)
         ).fetchone()
-        if not emp:
-            return None
+    return _resumen(emp)
+
+
+def resumen_empresa_id(empresa_id):
+    with conectar() as con:
+        emp = con.execute("SELECT * FROM empresas WHERE id=?", (empresa_id,)).fetchone()
+    return _resumen(emp)
+
+
+def _resumen(emp):
+    if not emp:
+        return None
+    with conectar() as con:
         codigos = [
             r["codigo"]
             for r in con.execute(
@@ -529,3 +551,100 @@ def sesion_abierta(codigo):
 def cerrar_sesion(codigo):
     with conectar() as con:
         con.execute("UPDATE sesiones SET fin_ts=? WHERE codigo=? AND fin_ts IS NULL", (_ahora(), codigo))
+
+
+# ---------- Cuentas de los dueños de empresa ----------
+
+_ALFABETO = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # sin letras ambiguas
+
+
+def clave_temporal():
+    return "".join(secrets.choice(_ALFABETO) for _ in range(10))
+
+
+def _hash_clave(clave, salt=None, iters=200_000):
+    salt = salt or secrets.token_hex(8)
+    h = hashlib.pbkdf2_hmac("sha256", clave.encode(), salt.encode(), iters).hex()
+    return f"pbkdf2${iters}${salt}${h}"
+
+
+def _verifica_clave(clave, guardado):
+    try:
+        _, iters, salt, h = guardado.split("$")
+        return hmac.compare_digest(_hash_clave(clave, salt, int(iters)).split("$")[3], h)
+    except Exception:
+        return False
+
+
+def secreto_sesion():
+    """Clave para firmar las sesiones; se crea una vez y se guarda en la base."""
+    with conectar() as con:
+        r = con.execute("SELECT valor FROM ajustes WHERE clave='secreto'").fetchone()
+        if r:
+            return r["valor"]
+        s = secrets.token_hex(32)
+        con.execute("INSERT INTO ajustes (clave, valor) VALUES ('secreto', ?)", (s,))
+        return s
+
+
+def crear_dueno(empresa_id, nombre, email):
+    """Crea la cuenta de un dueño. Devuelve (id, clave temporal)."""
+    clave = clave_temporal()
+    with conectar() as con:
+        try:
+            cur = con.execute(
+                "INSERT INTO duenos (empresa_id, nombre, email, clave_hash, creado_ts) VALUES (?,?,?,?,?)",
+                (empresa_id, nombre.strip()[:80], email.strip()[:120], _hash_clave(clave), _ahora()),
+            )
+        except sqlite3.IntegrityError:
+            raise ValueError("Ese correo ya tiene una cuenta")
+        return cur.lastrowid, clave
+
+
+def reiniciar_clave_dueno(dueno_id):
+    clave = clave_temporal()
+    with conectar() as con:
+        con.execute("UPDATE duenos SET clave_hash=? WHERE id=?", (_hash_clave(clave), dueno_id))
+    return clave
+
+
+def cambiar_clave_dueno(dueno_id, nueva):
+    with conectar() as con:
+        con.execute("UPDATE duenos SET clave_hash=? WHERE id=?", (_hash_clave(nueva), dueno_id))
+
+
+def autenticar_dueno(email, clave):
+    with conectar() as con:
+        r = con.execute("SELECT * FROM duenos WHERE email=?", (email.strip(),)).fetchone()
+        if not r:
+            _hash_clave(clave)  # gasta el mismo tiempo para no revelar si el correo existe
+            return None
+        if not _verifica_clave(clave, r["clave_hash"]):
+            return None
+        con.execute("UPDATE duenos SET ultimo_ingreso_ts=? WHERE id=?", (_ahora(), r["id"]))
+        return dict(r)
+
+
+def dueno_por_id(dueno_id):
+    with conectar() as con:
+        r = con.execute(
+            "SELECT d.*, e.nombre AS empresa FROM duenos d JOIN empresas e ON e.id=d.empresa_id WHERE d.id=?",
+            (dueno_id,),
+        ).fetchone()
+        return dict(r) if r else None
+
+
+def listar_duenos(empresa_id):
+    with conectar() as con:
+        return [
+            dict(r)
+            for r in con.execute(
+                "SELECT id, nombre, email, ultimo_ingreso_ts FROM duenos WHERE empresa_id=? ORDER BY id",
+                (empresa_id,),
+            )
+        ]
+
+
+def quitar_dueno(dueno_id):
+    with conectar() as con:
+        con.execute("DELETE FROM duenos WHERE id=?", (dueno_id,))

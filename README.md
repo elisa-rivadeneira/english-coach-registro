@@ -76,3 +76,9 @@ El coach no percibe el tiempo, así que el servidor lleva el reloj. Herramientas
 - «Para animar hoy»: quienes llevan 2 días o más sin hablar con el coach.
 
 Desde `/admin` se editan el tope diario de minutos (Inicio) y el compromiso diario de cada alumno (tabla de la empresa).
+
+## Cuentas de dueños de empresa (`/cuenta`)
+
+Cada dueño entra con su correo y su clave en `https://tu-dominio/cuenta` y ve **solo** el panel de los alumnos de su empresa (la empresa sale de la sesión firmada, no de la URL). Desde `/admin`, dentro de la empresa, la sección «Cuenta del dueño de la empresa» crea la cuenta: genera una clave temporal que se muestra una sola vez y, con SMTP configurado, se envía por correo. También permite generar una clave nueva o quitar la cuenta. El dueño puede cambiar su clave desde la barra lateral (al cambiarla, las sesiones anteriores dejan de valer). Hay bloqueo de 10 minutos tras 8 intentos fallidos. Las claves se guardan con PBKDF2-SHA256 y la sesión dura 14 días.
+
+El enlace antiguo `/gerente?token=...` sigue funcionando (lo usas tú desde el panel de administración).
