@@ -9,7 +9,7 @@ import sqlite3
 DB_PATH = os.environ.get("REGISTRO_DB", "registro.db")
 LIMA = dt.timezone(dt.timedelta(hours=-5))
 ALFABETO = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # sin 0/O/1/I para evitar confusiones
-MAX_MIN_DIA_DEFECTO = int(os.environ.get("MAX_MINUTOS_DIA", "60"))  # tope diario por defecto (editable en el panel)
+MAX_MIN_SESION = 480  # solo un límite técnico (8 h) para evitar errores de tipeo; no hay tope diario
 PAUSA_MAX_SEG = 600  # más de 10 min entre avisos = otra sesión
 
 
@@ -93,29 +93,6 @@ def iniciar():
             "UPDATE alumnos SET creado_ts = COALESCE((SELECT MIN(ts) FROM eventos e WHERE e.codigo=alumnos.codigo),"
             " CAST(strftime('%s','now') AS INTEGER)) WHERE creado_ts IS NULL"
         )
-
-
-def max_min_dia():
-    """Tope diario de conversación por voz (ajuste del panel o variable de entorno)."""
-    try:
-        with conectar() as con:
-            r = con.execute("SELECT valor FROM ajustes WHERE clave='max_min_dia'").fetchone()
-        if r:
-            return max(5, min(240, int(r["valor"])))
-    except Exception:
-        pass
-    return MAX_MIN_DIA_DEFECTO
-
-
-def fijar_max_min_dia(minutos):
-    m = _acotar(minutos, 5, 240)
-    with conectar() as con:
-        con.execute(
-            "INSERT INTO ajustes (clave, valor) VALUES ('max_min_dia', ?)"
-            " ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor",
-            (str(m),),
-        )
-    return m
 
 
 def _codigo_nuevo(prefijo):
@@ -486,8 +463,8 @@ def minutos_programados(codigo):
 
 
 def fijar_compromiso(codigo, minutos):
-    """Minutos diarios que el alumno dijo en su entrevista (tope max_min_dia())."""
-    m = _acotar(minutos, 5, max_min_dia())
+    """Minutos diarios que el alumno dijo en su entrevista (mínimo 5, sin tope diario)."""
+    m = _acotar(minutos, 5, MAX_MIN_SESION)
     with conectar() as con:
         con.execute("UPDATE alumnos SET compromiso_min=? WHERE codigo=?", (m, codigo))
     return m
@@ -496,7 +473,7 @@ def fijar_compromiso(codigo, minutos):
 def fijar_minutos_sesion(empresa_id, minutos):
     with conectar() as con:
         con.execute(
-            "UPDATE empresas SET minutos_sesion=? WHERE id=?", (_acotar(minutos, 5, max_min_dia()), empresa_id)
+            "UPDATE empresas SET minutos_sesion=? WHERE id=?", (_acotar(minutos, 5, MAX_MIN_SESION), empresa_id)
         )
 
 
@@ -518,22 +495,17 @@ def minutos_usados_hoy(codigo):
 
 
 def iniciar_sesion(codigo, minutos, tema=""):
-    """Abre una conversación (cierra las abiertas). Devuelve (minutos, tope_aplicado).
-    minutos=0 si ya se cumplió el tope diario."""
-    pedido = _acotar(minutos, 5, 1000) if minutos else minutos_programados(codigo)
+    """Abre una conversación (cierra las abiertas). Devuelve (minutos, False).
+    No hay tope diario: la persona practica lo que quiera."""
+    m = _acotar(minutos, 5, MAX_MIN_SESION) if minutos else minutos_programados(codigo)
     with conectar() as con:
         con.execute("UPDATE sesiones SET fin_ts=? WHERE codigo=? AND fin_ts IS NULL", (_ahora(), codigo))
-    disponible = max_min_dia() - minutos_usados_hoy(codigo)
-    m = min(pedido, disponible)
-    if m < 3:
-        return 0, True
-    with conectar() as con:
         con.execute(
             "INSERT INTO sesiones (codigo, inicio_ts, minutos, tema) VALUES (?,?,?,?)",
             (codigo, _ahora(), m, str(tema)[:80]),
         )
     registrar(codigo, "conversacion_inicio")
-    return m, m < pedido
+    return m, False
 
 
 def sesion_abierta(codigo):

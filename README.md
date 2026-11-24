@@ -63,7 +63,7 @@ Variables de entorno en Easypanel:
 ## Conversaciones por voz con duración programada
 
 El coach no percibe el tiempo, así que el servidor lleva el reloj. Herramientas del conector:
-- `iniciar_sesion(minutos, tema)`: abre la conversación y devuelve la agenda (calentamiento, tema, role-play, repaso, cierre). Con `minutos=0` usa el compromiso diario que el alumno dijo en su entrevista (`fijar_compromiso`); si no lo dijo, el valor por defecto de la empresa (panel). Tope diario: 60 minutos en total (variable `MAX_MINUTOS_DIA`); si ya los usó, el servidor le ordena al coach no abrir otra conversación.
+- `iniciar_sesion(minutos, tema)`: abre la conversación y devuelve la agenda (calentamiento, tema, role-play, repaso, cierre). Con `minutos=0` usa el compromiso diario que el alumno dijo en su entrevista (`fijar_compromiso`); si no lo dijo, el valor por defecto de la empresa (panel). No hay tope diario: la persona practica lo que quiera. Si la llamada se corta, puede volver a llamar y el coach retoma según el reloj del servidor.
 - `tiempo_restante()`: dice cuánto falta y qué actividad toca; el coach la llama cada 4–5 min y antes de despedirse. Mientras haya tiempo le indica no cerrar y cambiar de actividad.
 - `registrar_practica(tipo="conversacion", ...)` cierra la conversación. Cada consulta de tiempo cuenta como un pulso, así que los minutos del reporte son reales.
 

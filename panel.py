@@ -300,11 +300,6 @@ def registrar_rutas(mcp):
             f"<div class='stat'><b>{total}</b><span>Integrantes</span></div>"
             f"<div class='stat'><b>{activos}</b><span>Practicaron esta semana</span></div></div>"
             + tabla +
-            "<h2>Ajustes generales</h2>"
-            "<form method='post' action='/admin/tope' class='f'>"
-            f"<input name='minutos' type='number' min='5' max='240' value='{db.max_min_dia()}' style='width:90px'> "
-            "<span class='fine'>minutos máximos de conversación por voz por alumno al día (hoy: 60).</span>"
-            "<button class='g'>Guardar</button></form>"
             "<h2 id='nueva'>Nueva empresa</h2><form method='post' action='/admin/empresa' class='f'>"
             "<input name='nombre' placeholder='Nombre (Hotel Gloria)' required>"
             "<input name='prefijo' placeholder='Prefijo (GLO)' maxlength='4' size='6' required>"
@@ -351,7 +346,7 @@ def registrar_rutas(mcp):
                 f"<tr><td><b>{_e(a['nombre'] or '(sin nombre)')}</b><div class='fine'>{_e(a['email'])}</div>"
                 f"<details><summary class='fine'>ver mensaje</summary><pre>{_e(texto)}</pre></details></td>"
                 f"<td><span class='cod'>{_e(a['codigo'])}</span></td><td><form method='post' action='/admin/compromiso/{_e(a['codigo'])}' class='f' style='margin:0;flex-wrap:nowrap'>"
-                f"<input name='minutos' type='number' min='5' max='{db.max_min_dia()}' value='{a['compromiso'] or ''}' placeholder='–' style='width:64px;padding:6px'><span class='fine'>min</span>"
+                f"<input name='minutos' type='number' min='5' max='480' value='{a['compromiso'] or ''}' placeholder='–' style='width:64px;padding:6px'><span class='fine'>min</span>"
                 "<button class='g' style='padding:6px 10px'>OK</button></form></td>"
                 f"<td>{_dias_html(a['dias7'])}</td>"
                 f"<td>{a['racha']}</td><td>{ult}</td>"
@@ -403,10 +398,10 @@ def registrar_rutas(mcp):
             f"<div class='acciones'><a class='b gold' href='/gerente?token={_e(emp['token_gerente'])}' target='_blank'>Abrir panel del gerente</a> {todos}</div>"
             + tabla +
             "<h2>Duración de la conversación por voz</h2>"
-            f"<p class='fine'>Cada alumno dice en su entrevista cuántos minutos al día se compromete (tope {db.max_min_dia()}). Este valor se usa solo si no lo dijo.</p>"
+            f"<p class='fine'>Cada alumno dice en su entrevista cuántos minutos al día se compromete. Este valor se usa solo si no lo dijo.</p>"
             f"<form method='post' action='/admin/minutos/{eid}' class='f'>"
-            f"<input name='minutos' type='number' min='5' max='60' value='{int(emp.get('minutos_sesion') or 15)}' style='width:90px'> "
-            "<span class='fine'>minutos por defecto (tope 60).</span>"
+            f"<input name='minutos' type='number' min='5' max='480' value='{int(emp.get('minutos_sesion') or 15)}' style='width:90px'> "
+            "<span class='fine'>minutos por defecto (sin tope diario).</span>"
             "<button class='g'>Guardar</button></form>"
             + bloque_duenos +
             "<h2>Agregar integrante</h2><form method='post' action='/admin/alumno/" + str(eid) + "' class='f'>"
@@ -422,17 +417,6 @@ def registrar_rutas(mcp):
         if not autenticado(request):
             return _login()
         return await _vista_empresa(request, request.path_params["eid"])
-
-    @mcp.custom_route("/admin/tope", methods=["POST"])
-    async def fijar_tope(request: Request):
-        if not autenticado(request):
-            return _login()
-        d = await request.form()
-        try:
-            m = db.fijar_max_min_dia(int(str(d.get("minutos", "60"))))
-        except ValueError:
-            m = db.max_min_dia()
-        return RedirectResponse("/admin?tope=" + str(m), status_code=303)
 
     @mcp.custom_route("/admin/compromiso/{codigo}", methods=["POST"])
     async def fijar_comp(request: Request):
@@ -458,7 +442,7 @@ def registrar_rutas(mcp):
         except ValueError:
             m = 15
         db.fijar_minutos_sesion(eid, m)
-        return await _vista_empresa(request, eid, f"Las conversaciones por voz durarán {max(5, min(db.max_min_dia(), m))} minutos.")
+        return await _vista_empresa(request, eid, f"Las conversaciones por voz durarán {max(5, min(db.MAX_MIN_SESION, m))} minutos.")
 
     async def _entrega_dueno(request, d, clave, enviar):
         """Arma el aviso con el acceso (se muestra una sola vez) y, si se pidió, lo envía por correo."""
