@@ -422,7 +422,8 @@ def registrar_rutas(mcp):
             "<h1>Configuración</h1><p class='sub'>Cambios de decisión sin tocar el código. Vacío = valor por defecto.</p>"
             f"{msg}{aviso_key}<form method='post' action='/admin/configuracion' class='panel' style='padding:18px'>"
             "<h2>Voz</h2>" + motor +
-            campo("voces_mezcla", "Mezcla de voces de Google", "Nombres separados por coma (ej. en-US-Neural2-F,en-US-Neural2-D). Se alternan por frase.", ancho=520) +
+            campo("voces_mezcla", "Mezcla de voces de Google", "Nombres separados por coma (ej. en-US-Neural2-F,en-US-Neural2-D). Se alternan por frase. "
+                "<a href='https://cloud.google.com/text-to-speech/docs/list-voices-and-types' target='_blank' rel='noopener'>Ver lista de voces de Google ↗</a> (usa el nombre de la columna «Voice name»; para entrenar el oído conviene Neural2, inglés EE. UU. o británico).", ancho=520) +
             campo("voz_unica", "Voz única (opcional)", "Si escribes una, se usa siempre esa y se ignora la mezcla.") +
             campo("google_hilos", "Hilos para preparar audios", "Cuántos audios se piden a Google a la vez (1 a 16).", "number", 100) +
             campo("motores_kokoro", "Motores Kokoro", "Solo si usas Kokoro; cada uno consume CPU y RAM. Se aplica al reiniciar.", "number", 100) +
