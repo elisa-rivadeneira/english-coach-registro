@@ -49,6 +49,7 @@ def iniciar():
             );
             CREATE INDEX IF NOT EXISTS ix_eventos_codigo_ts ON eventos(codigo, ts);
             CREATE TABLE IF NOT EXISTS ajustes (clave TEXT PRIMARY KEY, valor TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS uso_voz (mes TEXT PRIMARY KEY, caracteres INTEGER NOT NULL DEFAULT 0, pedidos INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS duenos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 empresa_id INTEGER NOT NULL REFERENCES empresas(id),
@@ -620,3 +621,25 @@ def listar_duenos(empresa_id):
 def quitar_dueno(dueno_id):
     with conectar() as con:
         con.execute("DELETE FROM duenos WHERE id=?", (dueno_id,))
+
+
+# ---------- Uso de la voz de Google (caracteres enviados) ----------
+
+def _mes_actual():
+    return dt.datetime.now(LIMA).strftime("%Y-%m")
+
+
+def sumar_uso_voz(caracteres):
+    with conectar() as con:
+        con.execute(
+            "INSERT INTO uso_voz (mes, caracteres, pedidos) VALUES (?,?,1)"
+            " ON CONFLICT(mes) DO UPDATE SET caracteres=caracteres+excluded.caracteres, pedidos=pedidos+1",
+            (_mes_actual(), int(caracteres)),
+        )
+
+
+def uso_voz_mes():
+    """(caracteres, pedidos) enviados a Google en el mes actual."""
+    with conectar() as con:
+        r = con.execute("SELECT caracteres, pedidos FROM uso_voz WHERE mes=?", (_mes_actual(),)).fetchone()
+    return (int(r["caracteres"]), int(r["pedidos"])) if r else (0, 0)

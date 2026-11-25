@@ -353,13 +353,37 @@ def registrar_rutas(mcp):
             if filas
             else "<p class='fine'>Todavía no hay empresas. Crea la primera abajo.</p>"
         )
+        import voz as _voz
+
+        if _voz.MOTOR == "google":
+            usado, pedidos = db.uso_voz_mes()
+            gratis = 1_000_000
+            costo = max(0, usado - gratis) / 1_000_000 * 16
+            pct = round(100 * usado / gratis)
+            tope = _voz.TOPE_CARACTERES_MES
+            aviso = ""
+            if tope and usado >= tope:
+                aviso = "<p style='color:#b3261e'><b>Tope mensual alcanzado:</b> la voz usa el respaldo (Kokoro). Sube GOOGLE_TOPE_CARACTERES_MES en Easypanel si quieres seguir con Google.</p>"
+            elif pct >= 80:
+                aviso = "<p style='color:#b3261e'><b>Estás cerca de terminar el millón gratis de Neural2.</b> Desde ahí se cobra por uso.</p>"
+            voz_html = (
+                "<h2>Voz de Google este mes</h2><div class='cards'>"
+                f"<div class='stat'><b>{usado:,}</b><span>Caracteres enviados</span></div>"
+                f"<div class='stat'><b>{pct}%</b><span>Del millón gratis (Neural2)</span></div>"
+                f"<div class='stat'><b>US$ {costo:.2f}</b><span>Costo estimado</span></div></div>"
+                f"{aviso}<p class='fine'>Cuenta lo que tu servidor le envía a Google ({pedidos:,} pedidos); la factura oficial es la de Google Cloud."
+                f" Tope de seguridad: {tope:,} caracteres al mes.</p>" if tope else
+                f"{aviso}<p class='fine'>Cuenta lo que tu servidor le envía a Google ({pedidos:,} pedidos); la factura oficial es la de Google Cloud. Sin tope.</p>"
+            )
+        else:
+            voz_html = ""
         return pagina(
             "Inicio",
             "<h1>Inicio</h1><p class='sub'>Resumen de tus empresas y su práctica.</p>"
             f"<div class='cards'><div class='stat'><b>{len(emps)}</b><span>Empresas</span></div>"
             f"<div class='stat'><b>{total}</b><span>Integrantes</span></div>"
             f"<div class='stat'><b>{activos}</b><span>Practicaron esta semana</span></div></div>"
-            + tabla +
+            + voz_html + tabla +
             "<h2 id='nueva'>Nueva empresa</h2><form method='post' action='/admin/empresa' class='f'>"
             "<input name='nombre' placeholder='Nombre (Hotel Gloria)' required>"
             "<input name='prefijo' placeholder='Prefijo (GLO)' maxlength='4' size='6' required>"

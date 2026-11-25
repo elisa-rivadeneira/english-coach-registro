@@ -27,6 +27,9 @@ GOOGLE_VOCES = {
     "am_adam": "en-US-Neural2-D", "am_michael": "en-US-Neural2-J",
     "bf_emma": "en-GB-Neural2-A", "bm_george": "en-GB-Neural2-B",
 }
+# Tope de seguridad: caracteres al mes que el servidor puede enviar a Google (0 = sin tope). Al llegar, se usa Kokoro
+# como respaldo (si está instalado) y el panel lo avisa. Súbelo cuando decidas asumir más gasto.
+TOPE_CARACTERES_MES = int(os.environ.get("GOOGLE_TOPE_CARACTERES_MES", "2000000"))
 GOOGLE_VOZ_DEFECTO = os.environ.get("GOOGLE_VOZ_DEFECTO", "").strip()
 # Mezcla de voces: cada frase recibe siempre la misma voz (según su texto), pero distintas frases suenan con
 # voces distintas, para acostumbrar el oído. GOOGLE_VOCES_MEZCLA = lista separada por comas; vacío = sin mezcla.
@@ -134,12 +137,24 @@ def audio_mp3(texto: str, voz: str = "af_heart", velocidad: float = 0.95, motor:
             with open(ruta, "rb") as f:
                 return f.read()
         try:
+            import db as _db
+            usado = _db.uso_voz_mes()[0]
+        except Exception:  # si el contador falla, la voz sigue funcionando
+            _db, usado = None, 0
+        try:
+            if TOPE_CARACTERES_MES and usado + len(texto) > TOPE_CARACTERES_MES:
+                raise RuntimeError("tope mensual de caracteres alcanzado")
             datos = _google_mp3(texto, nombre, velocidad)
         except Exception as e:
             if nombre_google or not os.path.exists(MODELO):
                 raise ValueError(f"No se pudo generar con Google: {e}")
             # respaldo: Kokoro local (más lento) si hay modelo instalado
             return audio_mp3(texto, voz, velocidad, motor="kokoro")
+        if _db:
+            try:
+                _db.sumar_uso_voz(len(texto))
+            except Exception:
+                pass
         if usar_cache:
             _guardar(ruta, datos)
         return datos
