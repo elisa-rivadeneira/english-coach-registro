@@ -82,3 +82,9 @@ Desde `/admin` se editan el tope diario de minutos (Inicio) y el compromiso diar
 Cada dueño entra con su correo y su clave en `https://tu-dominio/cuenta` y ve **solo** el panel de los alumnos de su empresa (la empresa sale de la sesión firmada, no de la URL). Desde `/admin`, dentro de la empresa, la sección «Cuenta del dueño de la empresa» crea la cuenta: genera una clave temporal que se muestra una sola vez y, con SMTP configurado, se envía por correo. También permite generar una clave nueva o quitar la cuenta. El dueño puede cambiar su clave desde la barra lateral (al cambiarla, las sesiones anteriores dejan de valer). Hay bloqueo de 10 minutos tras 8 intentos fallidos. Las claves se guardan con PBKDF2-SHA256 y la sesión dura 14 días.
 
 El enlace antiguo `/gerente?token=...` sigue funcionando (lo usas tú desde el panel de administración).
+
+
+## Capacidad de la voz y prueba de carga
+- Generar una frase nueva ocupa un motor de Kokoro; las frases ya generadas salen del caché sin gastar CPU.
+- `MOTORES` (variable de entorno, 1 por defecto): cuántas frases nuevas se generan a la vez. Los pedidos extra esperan en fila.
+- Para saber cuánto aguanta tu VPS: abre la terminal del servicio en Easypanel y ejecuta `python prueba_carga.py`. Te dice frases/min, lecciones nuevas por hora y cuánto espera la última persona si 10 abren su lección a la vez.
