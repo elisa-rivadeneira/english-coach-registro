@@ -95,3 +95,4 @@ El enlace antiguo `/gerente?token=...` sigue funcionando (lo usas tú desde el p
 - Con `TTS_MOTOR=kokoro` (o sin la variable) todo sigue como antes. Si Google falla y hay modelo de Kokoro instalado, el servidor usa Kokoro como respaldo.
 - El caché es por frase, voz y velocidad, y los audios de Google se guardan aparte de los de Kokoro.
 - En el panel de administración, «Probar voces» (`/admin/muestras`) reproduce la misma frase con Kokoro y con varias voces de Google para comparar.
+- `GOOGLE_VOCES_MEZCLA`: lista de voces separadas por comas (por defecto 4 de EE. UU. y 1 británica). Cada frase recibe siempre la misma voz, y distintas frases suenan con voces distintas para entrenar el oído. Vacía la variable para usar una sola voz; `GOOGLE_VOZ_DEFECTO` la anula y fija una sola voz para todo.

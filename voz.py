@@ -28,6 +28,12 @@ GOOGLE_VOCES = {
     "bf_emma": "en-GB-Neural2-A", "bm_george": "en-GB-Neural2-B",
 }
 GOOGLE_VOZ_DEFECTO = os.environ.get("GOOGLE_VOZ_DEFECTO", "").strip()
+# Mezcla de voces: cada frase recibe siempre la misma voz (según su texto), pero distintas frases suenan con
+# voces distintas, para acostumbrar el oído. GOOGLE_VOCES_MEZCLA = lista separada por comas; vacío = sin mezcla.
+GOOGLE_VOCES_MEZCLA = [x.strip() for x in os.environ.get(
+    "GOOGLE_VOCES_MEZCLA",
+    "en-US-Neural2-F,en-US-Neural2-D,en-US-Neural2-C,en-US-Neural2-J,en-GB-Neural2-B",
+).split(",") if x.strip()]
 VOCES_OK = {"af_heart", "af_bella", "af_nicole", "am_adam", "am_michael", "bf_emma", "bm_george"}
 
 # Motores de voz en paralelo (MOTORES en el entorno; 1 por defecto). Cada motor ocupa RAM y CPU:
@@ -93,8 +99,13 @@ def _google_mp3(texto, nombre, velocidad):
     return base64.b64decode(datos["audioContent"])
 
 
-def _voz_google(voz):
-    return GOOGLE_VOZ_DEFECTO or GOOGLE_VOCES.get(voz, "en-US-Neural2-F")
+def _voz_google(voz, texto=""):
+    if GOOGLE_VOZ_DEFECTO:
+        return GOOGLE_VOZ_DEFECTO
+    if voz == "af_heart" and GOOGLE_VOCES_MEZCLA and texto:   # voz por defecto de la app: se mezcla
+        n = int(hashlib.sha256(texto.encode()).hexdigest(), 16)
+        return GOOGLE_VOCES_MEZCLA[n % len(GOOGLE_VOCES_MEZCLA)]
+    return GOOGLE_VOCES.get(voz, "en-US-Neural2-F")
 
 
 def _guardar(ruta, datos):
@@ -117,7 +128,7 @@ def audio_mp3(texto: str, voz: str = "af_heart", velocidad: float = 0.95, motor:
     velocidad = min(1.3, max(0.7, velocidad))
     motor = (motor or MOTOR)
     if motor == "google":
-        nombre = nombre_google or _voz_google(voz)
+        nombre = nombre_google or _voz_google(voz, texto)
         ruta = _ruta_clave(f"g|{nombre}|{velocidad}|{texto}")
         if usar_cache and os.path.exists(ruta):
             with open(ruta, "rb") as f:
@@ -208,7 +219,7 @@ def _trozos(texto):
 
 def _ruta(texto, voz="af_heart", velocidad=0.95):
     if MOTOR == "google":
-        return _ruta_clave(f"g|{_voz_google(voz)}|{velocidad}|{texto}")
+        return _ruta_clave(f"g|{_voz_google(voz, texto)}|{velocidad}|{texto}")
     return _ruta_clave(f"{voz}|{velocidad}|{texto}")
 
 
