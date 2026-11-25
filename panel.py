@@ -429,9 +429,9 @@ def registrar_rutas(mcp):
             campo("motores_kokoro", "Motores Kokoro", "Solo si usas Kokoro; cada uno consume CPU y RAM. Se aplica al reiniciar.", "number", 100) +
             "<h2>Límite y costos</h2>" +
             campo("tope_caracteres_mes", "Tope de seguridad (caracteres al mes)", "Al llegar, la voz pasa al respaldo. 0 = sin tope. Referencia: 2,000,000 ≈ US$16 por encima del gratis.", "number", 200) +
-            campo("gratis_caracteres", "Caracteres gratis al mes", "Para calcular el costo estimado (Neural2: 1,000,000).", "number", 200) +
-            campo("precio_millon_usd", "Precio por millón extra (US$)", "Neural2: 16.", "number", 120) +
-            campo("aviso_pct", "Avisar al llegar a (%) de lo gratis", "Muestra una alerta roja en Inicio.", "number", 100) +
+            campo("gratis_caracteres", "Caracteres gratis al mes", "Dato de Google, no se cambia allí: es solo para que el panel calcule el costo estimado. Neural2: 1,000,000. <a href='https://cloud.google.com/text-to-speech/pricing' target='_blank' rel='noopener'>Ver precios de Google ↗</a>", "number", 200) +
+            campo("precio_millon_usd", "Precio por millón extra (US$)", "Dato de Google, no se cambia allí: solo para el costo estimado del panel. Neural2: US$16. Si Google cambia su precio, actualízalo aquí. <a href='https://cloud.google.com/text-to-speech/pricing' target='_blank' rel='noopener'>Ver precios de Google ↗</a>", "number", 120) +
+            campo("aviso_pct", "Avisar al llegar a (%) de lo gratis", "Esto sí es decisión tuya: a qué porcentaje de lo gratis aparece la alerta roja en Inicio (no envía correos; los correos de gasto están en el presupuesto de Google Cloud).", "number", 100) +
             "<p><button>Guardar</button></p></form>"
             "<p class='fine'>La clave de Google (GOOGLE_TTS_API_KEY) sigue solo en Easypanel, por seguridad.</p>"
         )
