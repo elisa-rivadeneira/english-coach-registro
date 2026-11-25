@@ -204,6 +204,19 @@ async def generar_audio(ctx: Context, texto: str, voz_id: str = "af_heart", velo
     return [AudioContent(type="audio", data=datos, mimeType="audio/mpeg")]
 
 
+@mcp.tool()
+def preparar_audios(ctx: Context, frases: list[str]) -> str:
+    """Llámala justo DESPUÉS de escribir una lección nueva: recibe TODAS las frases en inglés que
+    la lección puede decir en voz alta (el "audio" de cada ejercicio, los "items[].en" y "example"
+    de las tarjetas, y los campos "target", "modelAnswer", "sentence" y "correct"). El servidor las
+    genera en segundo plano y responde al instante, así el alumno no espera cuando abre su app."""
+    codigo = _codigo(ctx)
+    if not codigo or not db.alumno_existe(codigo):
+        return MENSAJE_SIN_CODIGO
+    nuevos, listos = voz.precalentar(frases)
+    return f"Audios en preparación: {nuevos} nuevos (otros {listos} ya estaban listos). Siguen en segundo plano."
+
+
 @mcp.custom_route("/salud", methods=["GET"])
 async def salud(request: Request) -> PlainTextResponse:
     return PlainTextResponse("ok")

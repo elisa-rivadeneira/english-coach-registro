@@ -88,3 +88,4 @@ El enlace antiguo `/gerente?token=...` sigue funcionando (lo usas tú desde el p
 - Generar una frase nueva ocupa un motor de Kokoro; las frases ya generadas salen del caché sin gastar CPU.
 - `MOTORES` (variable de entorno, 1 por defecto): cuántas frases nuevas se generan a la vez. Los pedidos extra esperan en fila.
 - Para saber cuánto aguanta tu VPS: abre la terminal del servicio en Easypanel y ejecuta `python prueba_carga.py`. Te dice frases/min, lecciones nuevas por hora y cuánto espera la última persona si 10 abren su lección a la vez.
+- `preparar_audios(frases)`: el coach la llama al crear una lección; el servidor genera los audios en segundo plano (misma voz y velocidad que usa la app, así coinciden con el caché) y el alumno no espera al abrir.

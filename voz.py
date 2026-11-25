@@ -2,6 +2,8 @@
 import base64
 import hashlib
 import os
+import queue
+import re
 import subprocess
 import threading
 import uuid
@@ -86,3 +88,74 @@ def audio_mp3(texto: str, voz: str = "af_heart", velocidad: float = 0.95) -> byt
 
 def audio_base64(texto: str, voz: str = "af_heart", velocidad: float = 0.95) -> str:
     return base64.b64encode(audio_mp3(texto, voz, velocidad)).decode()
+
+
+# ---------- Preparar audios en segundo plano (cuando se crea la lección) ----------
+_cola = queue.Queue()
+_hilo = None
+_hilo_lock = threading.Lock()
+MAX_FRASES_LOTE = 80
+
+
+def _trozos(texto):
+    """Mismo corte que hace la app (frases de hasta ~280 caracteres), para que coincida el caché."""
+    t = " ".join(str(texto or "").split())
+    if len(t) <= 280:
+        return [t] if t else []
+    partes = re.findall(r"[^.!?…]+[.!?…]*\s*", t) or [t]
+    out, cur = [], ""
+    for x in partes:
+        if len(cur + x) > 280 and cur:
+            out.append(cur.strip())
+            cur = x
+        else:
+            cur += x
+    if cur.strip():
+        out.append(cur.strip())
+    res = []
+    for x in out:
+        if len(x) <= 300:
+            res.append(x)
+        else:
+            res += [y.strip() for y in re.findall(r".{1,280}(?:\s|$)", x) if y.strip()]
+    return res
+
+
+def _ruta(texto, voz="af_heart", velocidad=0.95):
+    clave = hashlib.sha256(f"{voz}|{velocidad}|{texto}".encode()).hexdigest()
+    return os.path.join(CACHE, clave + ".mp3")
+
+
+def _trabajador():
+    while True:
+        t = _cola.get()
+        try:
+            audio_mp3(t, "af_heart", 0.95)
+        except Exception:
+            pass
+        finally:
+            _cola.task_done()
+
+
+def precalentar(frases):
+    """Encola la generación de audios (sin esperar). Devuelve (pedidos_nuevos, ya_listos)."""
+    global _hilo
+    vistos, nuevos, listos = set(), 0, 0
+    for f in list(frases or [])[:MAX_FRASES_LOTE]:
+        if not isinstance(f, str) or "__" in f:
+            continue
+        for t in _trozos(f):
+            if t in vistos or len(t) > MAX_CARACTERES:
+                continue
+            vistos.add(t)
+            if os.path.exists(_ruta(t)):
+                listos += 1
+            else:
+                _cola.put(t)
+                nuevos += 1
+    if nuevos:
+        with _hilo_lock:
+            if _hilo is None or not _hilo.is_alive():
+                _hilo = threading.Thread(target=_trabajador, daemon=True)
+                _hilo.start()
+    return nuevos, listos
