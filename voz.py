@@ -1,5 +1,8 @@
 """Voz gratuita (Kokoro, código abierto) con caché por frase. Requiere ffmpeg instalado."""
 import base64
+import json
+import urllib.error
+import urllib.request
 import hashlib
 import os
 import queue
@@ -15,6 +18,16 @@ MODELO = os.path.join(DIR, "modelos", "kokoro-int8.onnx")
 VOCES = os.path.join(DIR, "modelos", "voices.bin")
 CACHE = os.environ.get("CACHE_DIR", os.path.join(DIR, "cache_audio"))
 MAX_CARACTERES = 300
+# Motor de voz: "kokoro" (local, gratis, lento en CPU chico) o "google" (Google Cloud Text-to-Speech, por uso).
+MOTOR = os.environ.get("TTS_MOTOR", "kokoro").strip().lower()
+GOOGLE_KEY = os.environ.get("GOOGLE_TTS_API_KEY", "").strip()
+# Voz de Google por defecto para cada voz de Kokoro (se puede cambiar con GOOGLE_VOZ_DEFECTO, p. ej. en-US-Neural2-C)
+GOOGLE_VOCES = {
+    "af_heart": "en-US-Neural2-F", "af_bella": "en-US-Neural2-H", "af_nicole": "en-US-Neural2-C",
+    "am_adam": "en-US-Neural2-D", "am_michael": "en-US-Neural2-J",
+    "bf_emma": "en-GB-Neural2-A", "bm_george": "en-GB-Neural2-B",
+}
+GOOGLE_VOZ_DEFECTO = os.environ.get("GOOGLE_VOZ_DEFECTO", "").strip()
 VOCES_OK = {"af_heart", "af_bella", "af_nicole", "am_adam", "am_michael", "bf_emma", "bm_george"}
 
 # Motores de voz en paralelo (MOTORES en el entorno; 1 por defecto). Cada motor ocupa RAM y CPU:
@@ -39,13 +52,61 @@ def _tomar_motor():
             _cv.wait()
 
 
+def _motor():
+    """Calienta el primer motor de Kokoro al arrancar (no hace nada si se usa Google)."""
+    if MOTOR == "google" or not os.path.exists(MODELO):
+        return
+    m = _tomar_motor()
+    _soltar_motor(m)
+
+
 def _soltar_motor(m):
     with _cv:
         _libres.append(m)
         _cv.notify()
 
 
-def audio_mp3(texto: str, voz: str = "af_heart", velocidad: float = 0.95) -> bytes:
+def _google_mp3(texto, nombre, velocidad):
+    """Pide el audio a Google Cloud Text-to-Speech (REST). Devuelve bytes mp3."""
+    if not GOOGLE_KEY:
+        raise RuntimeError("Falta GOOGLE_TTS_API_KEY")
+    idioma = "-".join(nombre.split("-")[:2])
+    cuerpo = json.dumps({
+        "input": {"text": texto},
+        "voice": {"languageCode": idioma, "name": nombre},
+        "audioConfig": {"audioEncoding": "MP3", "speakingRate": velocidad, "sampleRateHertz": 24000},
+    }).encode()
+    req = urllib.request.Request(
+        "https://texttospeech.googleapis.com/v1/text:synthesize",
+        data=cuerpo,
+        headers={"Content-Type": "application/json", "X-Goog-Api-Key": GOOGLE_KEY},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            datos = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read().decode()).get("error", {}).get("message", "")
+        except Exception:
+            msg = ""
+        raise RuntimeError(f"Google TTS {e.code}: {msg[:200]}")
+    return base64.b64decode(datos["audioContent"])
+
+
+def _voz_google(voz):
+    return GOOGLE_VOZ_DEFECTO or GOOGLE_VOCES.get(voz, "en-US-Neural2-F")
+
+
+def _guardar(ruta, datos):
+    os.makedirs(CACHE, exist_ok=True)
+    tmp = ruta + "." + uuid.uuid4().hex[:8] + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(datos)
+    os.replace(tmp, ruta)  # escritura atómica
+
+
+def audio_mp3(texto: str, voz: str = "af_heart", velocidad: float = 0.95, motor: str = None,
+              nombre_google: str = None, usar_cache: bool = True) -> bytes:
     texto = " ".join(texto.split())
     if not texto:
         raise ValueError("Texto vacío")
@@ -54,8 +115,32 @@ def audio_mp3(texto: str, voz: str = "af_heart", velocidad: float = 0.95) -> byt
     if voz not in VOCES_OK:
         voz = "af_heart"
     velocidad = min(1.3, max(0.7, velocidad))
-    clave = hashlib.sha256(f"{voz}|{velocidad}|{texto}".encode()).hexdigest()
-    ruta = os.path.join(CACHE, clave + ".mp3")
+    motor = (motor or MOTOR)
+    if motor == "google":
+        nombre = nombre_google or _voz_google(voz)
+        ruta = _ruta_clave(f"g|{nombre}|{velocidad}|{texto}")
+        if usar_cache and os.path.exists(ruta):
+            with open(ruta, "rb") as f:
+                return f.read()
+        try:
+            datos = _google_mp3(texto, nombre, velocidad)
+        except Exception as e:
+            if nombre_google or not os.path.exists(MODELO):
+                raise ValueError(f"No se pudo generar con Google: {e}")
+            # respaldo: Kokoro local (más lento) si hay modelo instalado
+            return audio_mp3(texto, voz, velocidad, motor="kokoro")
+        if usar_cache:
+            _guardar(ruta, datos)
+        return datos
+    return _kokoro_mp3(texto, voz, velocidad)
+
+
+def _ruta_clave(clave):
+    return os.path.join(CACHE, hashlib.sha256(clave.encode()).hexdigest() + ".mp3")
+
+
+def _kokoro_mp3(texto, voz, velocidad):
+    ruta = _ruta_clave(f"{voz}|{velocidad}|{texto}")
     if os.path.exists(ruta):
         with open(ruta, "rb") as f:
             return f.read()
@@ -92,7 +177,7 @@ def audio_base64(texto: str, voz: str = "af_heart", velocidad: float = 0.95) -> 
 
 # ---------- Preparar audios en segundo plano (cuando se crea la lección) ----------
 _cola = queue.Queue()
-_hilo = None
+_hilos = []
 _hilo_lock = threading.Lock()
 MAX_FRASES_LOTE = 80
 
@@ -122,8 +207,9 @@ def _trozos(texto):
 
 
 def _ruta(texto, voz="af_heart", velocidad=0.95):
-    clave = hashlib.sha256(f"{voz}|{velocidad}|{texto}".encode()).hexdigest()
-    return os.path.join(CACHE, clave + ".mp3")
+    if MOTOR == "google":
+        return _ruta_clave(f"g|{_voz_google(voz)}|{velocidad}|{texto}")
+    return _ruta_clave(f"{voz}|{velocidad}|{texto}")
 
 
 def _trabajador():
@@ -139,7 +225,6 @@ def _trabajador():
 
 def precalentar(frases):
     """Encola la generación de audios (sin esperar). Devuelve (pedidos_nuevos, ya_listos)."""
-    global _hilo
     vistos, nuevos, listos = set(), 0, 0
     for f in list(frases or [])[:MAX_FRASES_LOTE]:
         if not isinstance(f, str) or "__" in f:
@@ -155,7 +240,9 @@ def precalentar(frases):
                 nuevos += 1
     if nuevos:
         with _hilo_lock:
-            if _hilo is None or not _hilo.is_alive():
-                _hilo = threading.Thread(target=_trabajador, daemon=True)
-                _hilo.start()
+            n = int(os.environ.get("GOOGLE_HILOS", "4")) if MOTOR == "google" else 1
+            while len(_hilos) < n:
+                h = threading.Thread(target=_trabajador, daemon=True)
+                h.start()
+                _hilos.append(h)
     return nuevos, listos

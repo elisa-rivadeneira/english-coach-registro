@@ -89,3 +89,9 @@ El enlace antiguo `/gerente?token=...` sigue funcionando (lo usas tú desde el p
 - `MOTORES` (variable de entorno, 1 por defecto): cuántas frases nuevas se generan a la vez. Los pedidos extra esperan en fila.
 - Para saber cuánto aguanta tu VPS: abre la terminal del servicio en Easypanel y ejecuta `python prueba_carga.py`. Te dice frases/min, lecciones nuevas por hora y cuánto espera la última persona si 10 abren su lección a la vez.
 - `preparar_audios(frases)`: el coach la llama al crear una lección; el servidor genera los audios en segundo plano (misma voz y velocidad que usa la app, así coinciden con el caché) y el alumno no espera al abrir.
+
+## Voz con Google Cloud (Neural2) en vez de Kokoro
+- Variables de entorno: `TTS_MOTOR=google`, `GOOGLE_TTS_API_KEY=<tu clave>`; opcionales: `GOOGLE_VOZ_DEFECTO` (p. ej. `en-US-Neural2-C`), `GOOGLE_HILOS` (audios en paralelo en segundo plano, 4 por defecto).
+- Con `TTS_MOTOR=kokoro` (o sin la variable) todo sigue como antes. Si Google falla y hay modelo de Kokoro instalado, el servidor usa Kokoro como respaldo.
+- El caché es por frase, voz y velocidad, y los audios de Google se guardan aparte de los de Kokoro.
+- En el panel de administración, «Probar voces» (`/admin/muestras`) reproduce la misma frase con Kokoro y con varias voces de Google para comparar.

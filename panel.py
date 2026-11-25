@@ -210,6 +210,7 @@ def pagina(titulo, cuerpo, nav=True, activo=None):
         "<aside class='side'><div class='brand'><b>English Master Coach</b><span>Administración</span></div>"
         "<nav class='nav'>"
         f"<a href='/admin' class='{'on' if activo == 0 else ''}'><span>Inicio</span></a>"
+        "<a href='/admin/muestras'><span>Probar voces</span></a>"
         f"<h6>Empresas</h6>{items}"
         "<a href='/admin#nueva' class='nuevo'><span>+ Nueva empresa</span></a></nav>"
         "<div class='pie'><a href='/admin/salir'>Cerrar sesión</a></div></aside>"
@@ -272,6 +273,65 @@ def registrar_rutas(mcp):
         r = RedirectResponse("/admin", status_code=303)
         r.delete_cookie("admin")
         return r
+
+    @mcp.custom_route("/admin/muestras", methods=["GET"])
+    async def muestras(request: Request):
+        if not autenticado(request):
+            return _login()
+        import voz as _voz
+
+        frase = (request.query_params.get("frase") or "Could you tell me your name and your room number, please?")[:200]
+        q = urllib.parse.quote(frase)
+        hay_google = bool(_voz.GOOGLE_KEY)
+        opciones = [
+            ("Google Standard (la más básica, US)", "google", "en-US-Standard-F"),
+            ("Google Neural2 · mujer (US)", "google", "en-US-Neural2-F"),
+            ("Google Neural2 · mujer 2 (US)", "google", "en-US-Neural2-C"),
+            ("Google Neural2 · hombre (US)", "google", "en-US-Neural2-D"),
+            ("Google Neural2 · hombre (británico)", "google", "en-GB-Neural2-B"),
+        ]
+        filas = ""
+        if os.path.exists(_voz.MODELO):
+            filas += (
+                "<tr><td><b>Kokoro (el actual, en tu servidor)</b></td><td>"
+                f"<audio controls preload='none' src='/admin/muestra?motor=kokoro&frase={q}'></audio></td></tr>"
+            )
+        if hay_google:
+            for nombre, m, vz in opciones:
+                filas += (
+                    f"<tr><td><b>{_e(nombre)}</b><div class='fine'>{_e(vz)}</div></td><td>"
+                    f"<audio controls preload='none' src='/admin/muestra?motor=google&voz={_e(vz)}&frase={q}'></audio></td></tr>"
+                )
+        else:
+            filas += "<tr><td colspan='2'>Falta la variable <b>GOOGLE_TTS_API_KEY</b> en Easypanel para probar las voces de Google.</td></tr>"
+        return pagina(
+            "Probar voces",
+            "<h1>Probar voces</h1><p class='sub'>Escucha la misma frase con cada voz. Cada muestra de Google cuenta como una petición normal (centavos).</p>"
+            f"<form method='get' action='/admin/muestras' class='f'><input name='frase' value='{_e(frase)}' style='min-width:420px'>"
+            "<button class='g'>Cambiar frase</button></form>"
+            f"<table><tr><th>Voz</th><th>Audio</th></tr>{filas}</table>"
+            "<p class='fine'>Toca ▶ en cada fila; la primera vez tarda unos segundos en generarse.</p>",
+        )
+
+    @mcp.custom_route("/admin/muestra", methods=["GET"])
+    async def muestra(request: Request):
+        if not autenticado(request):
+            return HTMLResponse("No autorizado", status_code=401)
+        import voz as _voz
+        from starlette.responses import Response
+
+        frase = (request.query_params.get("frase") or "")[:200]
+        motor = request.query_params.get("motor") or "kokoro"
+        nombre = request.query_params.get("voz") or None
+        if motor == "google" and nombre and not nombre.replace("-", "").isalnum():
+            return HTMLResponse("voz no válida", status_code=400)
+        try:
+            datos = await anyio.to_thread.run_sync(
+                lambda: _voz.audio_mp3(frase, "af_heart", 0.95, motor=motor, nombre_google=nombre, usar_cache=(motor != "google"))
+            )
+        except Exception as e:
+            return HTMLResponse(f"Error: {html.escape(str(e))}", status_code=502)
+        return Response(datos, media_type="audio/mpeg")
 
     @mcp.custom_route("/admin", methods=["GET"])
     async def inicio(request: Request):
