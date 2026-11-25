@@ -643,3 +643,25 @@ def uso_voz_mes():
     with conectar() as con:
         r = con.execute("SELECT caracteres, pedidos FROM uso_voz WHERE mes=?", (_mes_actual(),)).fetchone()
     return (int(r["caracteres"]), int(r["pedidos"])) if r else (0, 0)
+
+
+# ---------- Configuración editable desde el panel (tabla ajustes) ----------
+
+def ajuste_get(clave):
+    """Valor guardado en el panel, o None si no hay (entonces se usa la variable de entorno o el defecto)."""
+    with conectar() as con:
+        r = con.execute("SELECT valor FROM ajustes WHERE clave=?", (clave,)).fetchone()
+    return r["valor"] if r else None
+
+
+def ajuste_set(clave, valor):
+    """Guarda un ajuste; con valor None o vacío lo borra (vuelve al valor por defecto)."""
+    with conectar() as con:
+        if valor is None or str(valor).strip() == "":
+            con.execute("DELETE FROM ajustes WHERE clave=?", (clave,))
+        else:
+            con.execute(
+                "INSERT INTO ajustes (clave, valor) VALUES (?, ?)"
+                " ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor",
+                (clave, str(valor).strip()),
+            )

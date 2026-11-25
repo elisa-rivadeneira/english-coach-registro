@@ -91,9 +91,9 @@ El enlace antiguo `/gerente?token=...` sigue funcionando (lo usas tú desde el p
 - `preparar_audios(frases)`: el coach la llama al crear una lección; el servidor genera los audios en segundo plano (misma voz y velocidad que usa la app, así coinciden con el caché) y el alumno no espera al abrir.
 
 ## Voz con Google Cloud (Neural2) en vez de Kokoro
-- Variables de entorno: `TTS_MOTOR=google`, `GOOGLE_TTS_API_KEY=<tu clave>`; opcionales: `GOOGLE_VOZ_DEFECTO` (p. ej. `en-US-Neural2-C`), `GOOGLE_HILOS` (audios en paralelo en segundo plano, 4 por defecto).
+- Lo único que va en Easypanel es el secreto: `GOOGLE_TTS_API_KEY=<tu clave>`. Todo lo demás (motor, voces, tope, precios, hilos) se cambia en el panel, página **Configuración** (`/admin/configuracion`), sin reiniciar. Las variables `TTS_MOTOR`, `GOOGLE_VOCES_MEZCLA`, `GOOGLE_VOZ_DEFECTO`, `GOOGLE_HILOS`, `GOOGLE_TOPE_CARACTERES_MES` y `MOTORES` solo sirven como valor inicial si no hay nada guardado en el panel.
 - Con `TTS_MOTOR=kokoro` (o sin la variable) todo sigue como antes. Si Google falla y hay modelo de Kokoro instalado, el servidor usa Kokoro como respaldo.
 - El caché es por frase, voz y velocidad, y los audios de Google se guardan aparte de los de Kokoro.
 - En el panel de administración, «Probar voces» (`/admin/muestras`) reproduce la misma frase con Kokoro y con varias voces de Google para comparar.
-- `GOOGLE_VOCES_MEZCLA`: lista de voces separadas por comas (por defecto 4 de EE. UU. y 1 británica). Cada frase recibe siempre la misma voz, y distintas frases suenan con voces distintas para entrenar el oído. Vacía la variable para usar una sola voz; `GOOGLE_VOZ_DEFECTO` la anula y fija una sola voz para todo.
-- `GOOGLE_TOPE_CARACTERES_MES` (2,000,000 por defecto; 0 = sin tope): tope de seguridad de caracteres que el servidor envía a Google al mes. Al alcanzarlo usa Kokoro como respaldo (si el modelo está instalado) y el panel de inicio lo avisa. El panel muestra los caracteres del mes, el porcentaje del millón gratis de Neural2 y el costo estimado.
+- Mezcla de voces (Configuración): lista separada por comas. Cada frase recibe siempre la misma voz y distintas frases suenan con voces distintas para entrenar el oído. "Voz única" la anula.
+- Tope de seguridad (Configuración, 2,000,000 por defecto; 0 = sin tope): caracteres que el servidor envía a Google al mes. Al alcanzarlo usa Kokoro como respaldo (si el modelo está instalado) y el panel de inicio lo avisa, junto con los caracteres del mes, el % de lo gratis y el costo estimado.

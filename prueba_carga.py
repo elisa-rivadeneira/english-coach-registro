@@ -29,7 +29,7 @@ def ronda(hilos, total):
     dur = time.time() - t0
     return total / dur * 60, sum(lat) / len(lat), max(lat)
 
-print("CPUs:", os.cpu_count(), "| MOTORES =", voz.N_MOTORES)
+print("CPUs:", os.cpu_count(), "| MOTORES =", voz.cfg("motores_kokoro"))
 try:
     mem = [l for l in open("/proc/meminfo") if l.startswith(("MemTotal", "MemAvailable"))]
     print(" ".join(x.strip() for x in mem))

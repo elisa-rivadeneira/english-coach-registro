@@ -18,30 +18,81 @@ MODELO = os.path.join(DIR, "modelos", "kokoro-int8.onnx")
 VOCES = os.path.join(DIR, "modelos", "voices.bin")
 CACHE = os.environ.get("CACHE_DIR", os.path.join(DIR, "cache_audio"))
 MAX_CARACTERES = 300
-# Motor de voz: "kokoro" (local, gratis, lento en CPU chico) o "google" (Google Cloud Text-to-Speech, por uso).
-MOTOR = os.environ.get("TTS_MOTOR", "kokoro").strip().lower()
-GOOGLE_KEY = os.environ.get("GOOGLE_TTS_API_KEY", "").strip()
+GOOGLE_KEY = os.environ.get("GOOGLE_TTS_API_KEY", "").strip()   # secreto: solo en Easypanel
 # Voz de Google por defecto para cada voz de Kokoro (se puede cambiar con GOOGLE_VOZ_DEFECTO, p. ej. en-US-Neural2-C)
 GOOGLE_VOCES = {
     "af_heart": "en-US-Neural2-F", "af_bella": "en-US-Neural2-H", "af_nicole": "en-US-Neural2-C",
     "am_adam": "en-US-Neural2-D", "am_michael": "en-US-Neural2-J",
     "bf_emma": "en-GB-Neural2-A", "bm_george": "en-GB-Neural2-B",
 }
-# Tope de seguridad: caracteres al mes que el servidor puede enviar a Google (0 = sin tope). Al llegar, se usa Kokoro
-# como respaldo (si está instalado) y el panel lo avisa. Súbelo cuando decidas asumir más gasto.
-TOPE_CARACTERES_MES = int(os.environ.get("GOOGLE_TOPE_CARACTERES_MES", "2000000"))
-GOOGLE_VOZ_DEFECTO = os.environ.get("GOOGLE_VOZ_DEFECTO", "").strip()
-# Mezcla de voces: cada frase recibe siempre la misma voz (según su texto), pero distintas frases suenan con
-# voces distintas, para acostumbrar el oído. GOOGLE_VOCES_MEZCLA = lista separada por comas; vacío = sin mezcla.
-GOOGLE_VOCES_MEZCLA = [x.strip() for x in os.environ.get(
-    "GOOGLE_VOCES_MEZCLA",
-    "en-US-Neural2-F,en-US-Neural2-D,en-US-Neural2-C,en-US-Neural2-J,en-GB-Neural2-B",
-).split(",") if x.strip()]
+# ---------- Configuración: se cambia en el panel (Configuración); si no hay valor guardado, se usa la variable
+# de entorno y, si tampoco, el valor por defecto de esta tabla. Los secretos (la clave de Google) NO van aquí. ----------
+MEZCLA_DEFECTO = "en-US-Neural2-F,en-US-Neural2-D,en-US-Neural2-C,en-US-Neural2-J,en-GB-Neural2-B"
+CONFIG = {
+    # clave: (variable de entorno opcional, valor por defecto)
+    "motor": ("TTS_MOTOR", "kokoro"),
+    "tope_caracteres_mes": ("GOOGLE_TOPE_CARACTERES_MES", "2000000"),
+    "voces_mezcla": ("GOOGLE_VOCES_MEZCLA", MEZCLA_DEFECTO),
+    "voz_unica": ("GOOGLE_VOZ_DEFECTO", ""),
+    "google_hilos": ("GOOGLE_HILOS", "4"),
+    "motores_kokoro": ("MOTORES", "1"),
+    "gratis_caracteres": (None, "1000000"),
+    "precio_millon_usd": (None, "16"),
+    "aviso_pct": (None, "80"),
+}
+_memo = {}
+
+
+def cfg(clave):
+    """Valor de la configuración (panel > variable de entorno > defecto). Se relee cada 5 segundos."""
+    ahora = __import__("time").time()
+    h = _memo.get(clave)
+    if h and ahora - h[0] < 5:
+        return h[1]
+    env, defecto = CONFIG[clave]
+    val = None
+    try:
+        import db as _db
+        val = _db.ajuste_get(clave)
+    except Exception:
+        val = None
+    if val is None and env:
+        val = os.environ.get(env)
+    if val is None or str(val).strip() == "":
+        val = defecto
+    val = str(val).strip()
+    _memo[clave] = (ahora, val)
+    return val
+
+
+def olvidar_cache_config():
+    _memo.clear()
+
+
+def _entero(clave, minimo=0):
+    try:
+        return max(minimo, int(float(cfg(clave))))
+    except ValueError:
+        return max(minimo, int(float(CONFIG[clave][1])))
+
+
+def motor_activo():
+    m = cfg("motor").lower()
+    return "google" if m == "google" else "kokoro"
+
+
+def tope_caracteres():
+    return _entero("tope_caracteres_mes")
+
+
+def voces_mezcla():
+    return [x.strip() for x in cfg("voces_mezcla").split(",") if x.strip()]
+
+
 VOCES_OK = {"af_heart", "af_bella", "af_nicole", "am_adam", "am_michael", "bf_emma", "bm_george"}
 
 # Motores de voz en paralelo (MOTORES en el entorno; 1 por defecto). Cada motor ocupa RAM y CPU:
 # súbelo solo si la prueba de carga (prueba_carga.py) muestra CPU libre.
-N_MOTORES = max(1, int(os.environ.get("MOTORES", "1")))
 _motores = []
 _libres = []
 _cv = threading.Condition()
@@ -53,7 +104,7 @@ def _tomar_motor():
         while True:
             if _libres:
                 return _libres.pop()
-            if len(_motores) < N_MOTORES:
+            if len(_motores) < _entero("motores_kokoro", 1):
                 from kokoro_onnx import Kokoro
                 m = Kokoro(MODELO, VOCES)
                 _motores.append(m)
@@ -63,7 +114,7 @@ def _tomar_motor():
 
 def _motor():
     """Calienta el primer motor de Kokoro al arrancar (no hace nada si se usa Google)."""
-    if MOTOR == "google" or not os.path.exists(MODELO):
+    if motor_activo() == "google" or not os.path.exists(MODELO):
         return
     m = _tomar_motor()
     _soltar_motor(m)
@@ -103,11 +154,13 @@ def _google_mp3(texto, nombre, velocidad):
 
 
 def _voz_google(voz, texto=""):
-    if GOOGLE_VOZ_DEFECTO:
-        return GOOGLE_VOZ_DEFECTO
-    if voz == "af_heart" and GOOGLE_VOCES_MEZCLA and texto:   # voz por defecto de la app: se mezcla
+    unica = cfg("voz_unica")
+    if unica:
+        return unica
+    mezcla = voces_mezcla()
+    if voz == "af_heart" and mezcla and texto:   # voz por defecto de la app: se mezcla
         n = int(hashlib.sha256(texto.encode()).hexdigest(), 16)
-        return GOOGLE_VOCES_MEZCLA[n % len(GOOGLE_VOCES_MEZCLA)]
+        return mezcla[n % len(mezcla)]
     return GOOGLE_VOCES.get(voz, "en-US-Neural2-F")
 
 
@@ -129,7 +182,7 @@ def audio_mp3(texto: str, voz: str = "af_heart", velocidad: float = 0.95, motor:
     if voz not in VOCES_OK:
         voz = "af_heart"
     velocidad = min(1.3, max(0.7, velocidad))
-    motor = (motor or MOTOR)
+    motor = (motor or motor_activo())
     if motor == "google":
         nombre = nombre_google or _voz_google(voz, texto)
         ruta = _ruta_clave(f"g|{nombre}|{velocidad}|{texto}")
@@ -142,7 +195,8 @@ def audio_mp3(texto: str, voz: str = "af_heart", velocidad: float = 0.95, motor:
         except Exception:  # si el contador falla, la voz sigue funcionando
             _db, usado = None, 0
         try:
-            if TOPE_CARACTERES_MES and usado + len(texto) > TOPE_CARACTERES_MES:
+            tope = tope_caracteres()
+            if tope and usado + len(texto) > tope:
                 raise RuntimeError("tope mensual de caracteres alcanzado")
             datos = _google_mp3(texto, nombre, velocidad)
         except Exception as e:
@@ -233,7 +287,7 @@ def _trozos(texto):
 
 
 def _ruta(texto, voz="af_heart", velocidad=0.95):
-    if MOTOR == "google":
+    if motor_activo() == "google":
         return _ruta_clave(f"g|{_voz_google(voz, texto)}|{velocidad}|{texto}")
     return _ruta_clave(f"{voz}|{velocidad}|{texto}")
 
@@ -266,7 +320,7 @@ def precalentar(frases):
                 nuevos += 1
     if nuevos:
         with _hilo_lock:
-            n = int(os.environ.get("GOOGLE_HILOS", "4")) if MOTOR == "google" else 1
+            n = _entero("google_hilos", 1) if motor_activo() == "google" else 1
             while len(_hilos) < n:
                 h = threading.Thread(target=_trabajador, daemon=True)
                 h.start()

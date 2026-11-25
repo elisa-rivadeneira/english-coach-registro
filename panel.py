@@ -211,6 +211,7 @@ def pagina(titulo, cuerpo, nav=True, activo=None):
         "<nav class='nav'>"
         f"<a href='/admin' class='{'on' if activo == 0 else ''}'><span>Inicio</span></a>"
         "<a href='/admin/muestras'><span>Probar voces</span></a>"
+        "<a href='/admin/configuracion'><span>Configuración</span></a>"
         f"<h6>Empresas</h6>{items}"
         "<a href='/admin#nueva' class='nuevo'><span>+ Nueva empresa</span></a></nav>"
         "<div class='pie'><a href='/admin/salir'>Cerrar sesión</a></div></aside>"
@@ -355,25 +356,26 @@ def registrar_rutas(mcp):
         )
         import voz as _voz
 
-        if _voz.MOTOR == "google":
+        if _voz.motor_activo() == "google":
             usado, pedidos = db.uso_voz_mes()
-            gratis = 1_000_000
-            costo = max(0, usado - gratis) / 1_000_000 * 16
+            gratis = max(1, int(float(_voz.cfg("gratis_caracteres"))))
+            precio = float(_voz.cfg("precio_millon_usd"))
+            aviso_pct = int(float(_voz.cfg("aviso_pct")))
+            costo = max(0, usado - gratis) / 1_000_000 * precio
             pct = round(100 * usado / gratis)
-            tope = _voz.TOPE_CARACTERES_MES
+            tope = _voz.tope_caracteres()
             aviso = ""
             if tope and usado >= tope:
-                aviso = "<p style='color:#b3261e'><b>Tope mensual alcanzado:</b> la voz usa el respaldo (Kokoro). Sube GOOGLE_TOPE_CARACTERES_MES en Easypanel si quieres seguir con Google.</p>"
-            elif pct >= 80:
-                aviso = "<p style='color:#b3261e'><b>Estás cerca de terminar el millón gratis de Neural2.</b> Desde ahí se cobra por uso.</p>"
+                aviso = "<p style='color:#b3261e'><b>Tope mensual alcanzado:</b> la voz usa el respaldo (Kokoro). Súbelo en <a href='/admin/configuracion'>Configuración</a> si quieres seguir con Google.</p>"
+            elif pct >= aviso_pct:
+                aviso = "<p style='color:#b3261e'><b>Estás cerca de terminar los caracteres gratis de Google.</b> Desde ahí se cobra por uso.</p>"
+            tope_txt = f" Tope de seguridad: {tope:,} caracteres al mes." if tope else " Sin tope."
             voz_html = (
                 "<h2>Voz de Google este mes</h2><div class='cards'>"
                 f"<div class='stat'><b>{usado:,}</b><span>Caracteres enviados</span></div>"
-                f"<div class='stat'><b>{pct}%</b><span>Del millón gratis (Neural2)</span></div>"
+                f"<div class='stat'><b>{pct}%</b><span>De los {gratis:,} gratis</span></div>"
                 f"<div class='stat'><b>US$ {costo:.2f}</b><span>Costo estimado</span></div></div>"
-                f"{aviso}<p class='fine'>Cuenta lo que tu servidor le envía a Google ({pedidos:,} pedidos); la factura oficial es la de Google Cloud."
-                f" Tope de seguridad: {tope:,} caracteres al mes.</p>" if tope else
-                f"{aviso}<p class='fine'>Cuenta lo que tu servidor le envía a Google ({pedidos:,} pedidos); la factura oficial es la de Google Cloud. Sin tope.</p>"
+                f"{aviso}<p class='fine'>Cuenta lo que tu servidor le envía a Google ({pedidos:,} pedidos); la factura oficial es la de Google Cloud.{tope_txt}</p>"
             )
         else:
             voz_html = ""
@@ -390,6 +392,93 @@ def registrar_rutas(mcp):
             "<button>Crear empresa</button></form>",
             activo=0,
         )
+
+    @mcp.custom_route("/admin/configuracion", methods=["GET"])
+    async def configuracion(request: Request):
+        if not autenticado(request):
+            return _login()
+        import voz as _voz
+
+        guardado = request.query_params.get("ok")
+        error = request.query_params.get("error", "")
+        def campo(clave, etiqueta, ayuda, tipo="text", ancho=420):
+            return (
+                f"<p><label><b>{etiqueta}</b><br><input name='{clave}' type='{tipo}' value='{_e(_voz.cfg(clave))}' style='min-width:{ancho}px'></label>"
+                f"<br><span class='fine'>{ayuda}</span></p>"
+            )
+        sel = _voz.motor_activo()
+        motor = (
+            "<p><label><b>Motor de voz</b><br><select name='motor'>"
+            f"<option value='google'{' selected' if sel == 'google' else ''}>Google (Neural2)</option>"
+            f"<option value='kokoro'{' selected' if sel == 'kokoro' else ''}>Kokoro (propio, lento en 1 CPU)</option></select></label></p>"
+        )
+        aviso_key = "" if _voz.GOOGLE_KEY else "<p style='color:#b3261e'>Falta GOOGLE_TTS_API_KEY en Easypanel: con Google elegido la voz usará el respaldo Kokoro.</p>"
+        msg = ""
+        if guardado:
+            msg = "<p style='color:#1a7f37'><b>Guardado.</b> Se aplica en unos segundos, sin reiniciar.</p>"
+        if error:
+            msg = f"<p style='color:#b3261e'><b>No se guardó:</b> {_e(error)}</p>"
+        cuerpo = (
+            "<h1>Configuración</h1><p class='sub'>Cambios de decisión sin tocar el código. Vacío = valor por defecto.</p>"
+            f"{msg}{aviso_key}<form method='post' action='/admin/configuracion' class='panel' style='padding:18px'>"
+            "<h2>Voz</h2>" + motor +
+            campo("voces_mezcla", "Mezcla de voces de Google", "Nombres separados por coma (ej. en-US-Neural2-F,en-US-Neural2-D). Se alternan por frase.", ancho=520) +
+            campo("voz_unica", "Voz única (opcional)", "Si escribes una, se usa siempre esa y se ignora la mezcla.") +
+            campo("google_hilos", "Hilos para preparar audios", "Cuántos audios se piden a Google a la vez (1 a 16).", "number", 100) +
+            campo("motores_kokoro", "Motores Kokoro", "Solo si usas Kokoro; cada uno consume CPU y RAM. Se aplica al reiniciar.", "number", 100) +
+            "<h2>Límite y costos</h2>" +
+            campo("tope_caracteres_mes", "Tope de seguridad (caracteres al mes)", "Al llegar, la voz pasa al respaldo. 0 = sin tope. Referencia: 2,000,000 ≈ US$16 por encima del gratis.", "number", 200) +
+            campo("gratis_caracteres", "Caracteres gratis al mes", "Para calcular el costo estimado (Neural2: 1,000,000).", "number", 200) +
+            campo("precio_millon_usd", "Precio por millón extra (US$)", "Neural2: 16.", "number", 120) +
+            campo("aviso_pct", "Avisar al llegar a (%) de lo gratis", "Muestra una alerta roja en Inicio.", "number", 100) +
+            "<p><button>Guardar</button></p></form>"
+            "<p class='fine'>La clave de Google (GOOGLE_TTS_API_KEY) sigue solo en Easypanel, por seguridad.</p>"
+        )
+        return pagina("Configuración", cuerpo, activo=-1)
+
+    @mcp.custom_route("/admin/configuracion", methods=["POST"])
+    async def guardar_configuracion(request: Request):
+        if not autenticado(request):
+            return _login()
+        import voz as _voz
+        from urllib.parse import quote
+
+        datos = await request.form()
+        try:
+            nuevos = {}
+            m = str(datos.get("motor", "google")).strip().lower()
+            if m not in ("google", "kokoro"):
+                raise ValueError("Motor inválido.")
+            nuevos["motor"] = m
+            for k, lo, hi in (("tope_caracteres_mes", 0, 10**9), ("gratis_caracteres", 1, 10**9),
+                              ("aviso_pct", 1, 1000), ("google_hilos", 1, 16), ("motores_kokoro", 1, 8)):
+                v = str(datos.get(k, "")).strip().replace(",", "")
+                if v == "":
+                    nuevos[k] = ""
+                    continue
+                n = float(v)
+                if not (lo <= n <= hi):
+                    raise ValueError(f"{k}: debe estar entre {lo} y {hi}.")
+                nuevos[k] = str(int(n))
+            v = str(datos.get("precio_millon_usd", "")).strip()
+            if v:
+                if not (0 <= float(v) <= 1000):
+                    raise ValueError("Precio fuera de rango.")
+            nuevos["precio_millon_usd"] = v
+            import re as _re
+            for k in ("voces_mezcla", "voz_unica"):
+                v = ",".join(x.strip() for x in str(datos.get(k, "")).split(",") if x.strip())
+                if v and not all(_re.fullmatch(r"[A-Za-z]{2,3}-[A-Za-z]{2,3}-[A-Za-z0-9]+-[A-Za-z0-9]+", x) for x in v.split(",")):
+                    raise ValueError("Los nombres de voz deben verse como en-US-Neural2-F.")
+                if k == "voz_unica" and "," in v:
+                    raise ValueError("La voz única es un solo nombre.")
+                nuevos[k] = v
+        except ValueError as e:
+            return RedirectResponse("/admin/configuracion?error=" + quote(str(e) or "Valor inválido."), status_code=303)
+        for k, v in nuevos.items():
+            db.ajuste_set(k, v)
+        _voz.olvidar_cache_config()
+        return RedirectResponse("/admin/configuracion?ok=1", status_code=303)
 
     @mcp.custom_route("/admin/empresa", methods=["POST"])
     async def nueva_empresa(request: Request):
